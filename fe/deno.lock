@@ -1,0 +1,21 @@
+{
+  "version": "3",
+  "packages": {
+    "specifiers": {
+      "jsr:@std/bytes@^0.224.0": "jsr:@std/bytes@0.224.0",
+      "jsr:@std/io": "jsr:@std/io@0.224.0"
+    },
+    "jsr": {
+      "@std/bytes@0.224.0": {
+        "integrity": "a2250e1d0eb7d1c5a426f21267ab9bdeac2447fa87a3d0d1a467d3f7a6058e49"
+      },
+      "@std/io@0.224.0": {
+        "integrity": "0aff885d21d829c050b8a08b1d71b54aed5841aecf227f8d77e99ec529a11e8e",
+        "dependencies": [
+          "jsr:@std/bytes@^0.224.0"
+        ]
+      }
+    }
+  },
+  "remote": {}
+}

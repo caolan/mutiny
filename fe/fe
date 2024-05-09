@@ -1,0 +1,3 @@
+#!/bin/sh
+SOCKET_PATH="$1"
+deno run --allow-read="$SOCKET_PATH" --allow-write="$SOCKET_PATH" main.ts $SOCKET_PATH
