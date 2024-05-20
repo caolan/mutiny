@@ -1,0 +1,15 @@
+#!/bin/sh
+DIR=`dirname $0`
+# SOCKET_PATH="$1"
+deno run \
+    --allow-read \
+    --allow-write \
+    --allow-net="127.0.0.1:0" \
+    --allow-env="XDG_RUNTIME_DIR,HOME" \
+    $DIR/main.ts \
+    $@
+
+# TODO: have initial process spawn another dropping permissions and
+# restricting only to environment variables relevant for platform, e.g.:
+#     --allow-read="$SOCKET_PATH,$XDG_RUNTIME_DIR,$CWD"
+#     --allow-write="$SOCKET_PATH,$XDG_RUNTIME_DIR"
