@@ -24,3 +24,25 @@ Then, run fe to check communication between daemon and CLI:
 cd fe
 ./fe ../fed/fed.socket
 ```
+
+## Examples
+
+### Ping
+
+Demonstrates communication between frontend, fes backend, and fed daemon.
+
+First, start the fed daemon:
+
+```
+cd fed
+cargo run
+```
+
+Then, serve the app:
+
+```
+./fes/fes examples/ping
+```
+
+And open the displayed URL in your browser. You should see the message:
+'Hello from fed'.

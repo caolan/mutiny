@@ -1,0 +1,8 @@
+<h1>Ping example</h1>
+<pre id="response"></pre>
+
+<script>
+    fetch("/_api/ping").then(async (res) => {
+        response.textContent = await res.text();
+    });
+</script>
