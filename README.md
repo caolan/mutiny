@@ -7,6 +7,7 @@ Peer-to-peer web applications runtime.
 * fe - user-friendly CLI interface to fed
 * fed - long-running process to manage networking, persistence, data sync
 * fes - serves an application and provides HTTP API
+* lib/ - shared code for the above applications
 
 ## Usage
 
