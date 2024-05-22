@@ -639,14 +639,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fed"
-version = "0.1.0"
-dependencies = [
- "libp2p",
- "tokio",
-]
-
-[[package]]
 name = "fiat-crypto"
 version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1675,6 +1667,14 @@ dependencies = [
  "pin-project",
  "smallvec",
  "unsigned-varint 0.7.2",
+]
+
+[[package]]
+name = "mutiny"
+version = "0.1.0"
+dependencies = [
+ "libp2p",
+ "tokio",
 ]
 
 [[package]]

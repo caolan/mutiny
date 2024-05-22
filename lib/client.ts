@@ -1,4 +1,4 @@
-// A client library to talk to the FE daemon via unix socket
+// A client library to talk to the mutiny daemon via unix socket
 
 import { resolve } from "https://deno.land/std@0.224.0/path/mod.ts";
 import { writeAll } from "https://deno.land/std@0.224.0/io/mod.ts";
@@ -21,31 +21,31 @@ function userRuntimePath(): string | undefined {
 }
 
 function appRuntimePath(): string | undefined {
-    return ifDefined(userRuntimePath(), dir => resolve(dir, "fe"));
+    return ifDefined(userRuntimePath(), dir => resolve(dir, "mutiny"));
 }
 
 export function defaultSocketPath(): string | undefined {
-    return ifDefined(appRuntimePath(), dir => resolve(dir, "fed.socket"));
+    return ifDefined(appRuntimePath(), dir => resolve(dir, "mutinyd.socket"));
 }
 
 type ConnectOptions = {
     socket_path?: string,
 };
 
-export async function connect({socket_path}: ConnectOptions): Promise<FEClient> {
+export async function connect({socket_path}: ConnectOptions): Promise<MutinyClient> {
     const path = socket_path ?? defaultSocketPath(); 
     if (!path) {
-        throw new Error("Could not determine fed.socket path");
+        throw new Error("Could not determine mutinyd.socket path");
     }
     console.log(`Connecting to ${path}`);
     const conn = await Deno.connect({
         transport: 'unix',
         path,
     });
-    return new FEClient(conn);
+    return new MutinyClient(conn);
 }
 
-export class FEClient {
+export class MutinyClient {
     constructor(
         private conn: Deno.UnixConn,
     ) {}

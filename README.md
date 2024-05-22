@@ -1,12 +1,12 @@
-# FuckEvil
+# Mutiny
 
 Peer-to-peer web applications runtime.
 
 ## Structure
 
-* fe - user-friendly CLI interface to fed
-* fed - long-running process to manage networking, persistence, data sync
-* fes - serves an application and provides HTTP API
+* mutiny - user-friendly CLI interface to mutinyd
+* mutinyd - long-running process to manage networking, persistence, data sync
+* mutiny-app - serves an application and provides HTTP API
 * lib/ - shared code for the above applications
 
 ## Usage
@@ -14,35 +14,34 @@ Peer-to-peer web applications runtime.
 First, run the daemon:
 
 ```
-cd fed
+cd mutinyd
 cargo run
 ```
 
-Then, run fe to check communication between daemon and CLI:
+Then, run mutiny to check communication between daemon and CLI:
 
 ```
-cd fe
-./fe ../fed/fed.socket
+./mutiny/mutiny
 ```
 
 ## Examples
 
 ### Ping
 
-Demonstrates communication between frontend, fes backend, and fed daemon.
+Demonstrates communication between frontend, mutiny-app backend, and mutinyd daemon.
 
-First, start the fed daemon:
+First, start the mutinyd daemon:
 
 ```
-cd fed
+cd mutinyd
 cargo run
 ```
 
 Then, serve the app:
 
 ```
-./fes/fes examples/ping
+./mutiny-app/mutiny-app examples/ping
 ```
 
 And open the displayed URL in your browser. You should see the message:
-'Hello from fed'.
+'Hello from mutinyd'.

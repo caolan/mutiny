@@ -17,7 +17,7 @@ fn user_runtime_dir_path() -> Result<PathBuf, std::env::VarError> {
 
 fn open_app_runtime_dir() -> Result<PathBuf, Box<dyn Error>> {
     // Determine application's runtime directory
-    let p = user_runtime_dir_path()?.join("fe");
+    let p = user_runtime_dir_path()?.join("mutiny");
     // Ensure path exists
     fs::create_dir_all(&p)?;
     // Restrict to current user
@@ -26,7 +26,7 @@ fn open_app_runtime_dir() -> Result<PathBuf, Box<dyn Error>> {
 }
 
 fn get_socket_path() -> Result<PathBuf, Box<dyn Error>> {
-    Ok(open_app_runtime_dir()?.join("fed.socket"))
+    Ok(open_app_runtime_dir()?.join("mutinyd.socket"))
 }
 
 async fn listen(socket_path: PathBuf) {
@@ -40,7 +40,7 @@ async fn listen(socket_path: PathBuf) {
                 let mut lines = reader.lines();
                 while let Some(line) = lines.next_line().await.unwrap() {
                     println!("Received: {line}");
-                    let msg = b"Hello from fed\n";
+                    let msg = b"Hello from mutinyd\n";
                     write.write_all(msg).await.unwrap();
                 }
             }

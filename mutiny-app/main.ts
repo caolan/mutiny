@@ -1,9 +1,9 @@
 import { serveDir } from "https://deno.land/std@0.224.0/http/file_server.ts";
-import { connect, defaultSocketPath, FEClient } from "../lib/client.ts";
+import { connect, defaultSocketPath, MutinyClient } from "../lib/client.ts";
 
 class Server {
     constructor (
-        private client: FEClient,
+        private client: MutinyClient,
         private root: string,
     ) {}
 
