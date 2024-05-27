@@ -1,44 +1,24 @@
 use tokio::{signal, io::BufReader, io::AsyncReadExt, io::AsyncWriteExt, net::UnixListener};
-use serde::{Deserialize, Serialize};
-use rmp_serde::Serializer;
-use std::env::{var, consts::OS};
-use std::path::{PathBuf, Path};
 use std::os::unix::fs::PermissionsExt;
+use serde::Serialize;
+use rmp_serde::Serializer;
+use std::path::{PathBuf, Path};
 use std::error::Error;
+use libp2p::identity::Keypair;
+use std::io::Write;
 use std::fs;
 
-fn user_runtime_dir_path() -> Result<PathBuf, std::env::VarError> {
-    if OS == "macos" {
-        // Just pick something sensible
-        Ok(PathBuf::from(var("HOME")?).join("Library/Caches/TemporaryItems"))
-    } else {
-        // Assume following freedesktop.org specification (Linux etc)
-        Ok(PathBuf::from(var("XDG_RUNTIME_DIR")?))
-    }
-}
+mod protocol;
+mod dirs;
 
-fn open_app_runtime_dir() -> Result<PathBuf, Box<dyn Error>> {
-    // Determine application's runtime directory
-    let p = user_runtime_dir_path()?.join("mutiny");
-    // Ensure path exists
-    fs::create_dir_all(&p)?;
-    // Restrict to current user
-    fs::set_permissions(&p, fs::Permissions::from_mode(0o700))?;
-    Ok(p)
-}
+use protocol::{Request, Response};
 
 fn get_socket_path() -> Result<PathBuf, Box<dyn Error>> {
-    Ok(open_app_runtime_dir()?.join("mutinyd.socket"))
+    Ok(dirs::open_app_runtime_dir()?.join("mutinyd.socket"))
 }
 
-#[derive(Deserialize)]
-enum Request {
-    Ping,
-}
-
-#[derive(Serialize)]
-enum Response {
-    Pong,
+fn get_keypair_path() -> Result<PathBuf, Box<dyn Error>> {
+    Ok(dirs::open_app_data_dir()?.join("identity.key"))
 }
 
 async fn handle_request(_request: Request) -> Response {
@@ -84,8 +64,25 @@ async fn listen(socket_path: &Path) {
     }
 }
 
-#[tokio::main]
-async fn main() {
+async fn run() -> Result<(), Box<dyn Error>> {
+    let keypair_path = get_keypair_path()?;
+    println!("Reading identity {:?}", keypair_path);
+    let keypair = if keypair_path.exists() {
+        let encoded = fs::read(keypair_path)?;
+        Keypair::from_protobuf_encoding(&encoded)?
+    } else {
+        println!("  Generating new keypair");
+        let k = Keypair::generate_ed25519();
+        let encoded = k.to_protobuf_encoding()?;
+        let mut f = fs::File::create(keypair_path)?;
+        f.set_permissions(fs::Permissions::from_mode(0o600))?;
+        f.write_all(&encoded)?;
+        k
+    };
+    println!("  Local peer ID: {}", libp2p::identity::PeerId::from_public_key(
+        &keypair.public(),
+    ));
+
     let socket_path = get_socket_path().expect("Open unix socket");
     let socket_path2 = socket_path.clone();
     // Cleans up unix socket after ctrl-c
@@ -98,5 +95,12 @@ async fn main() {
         r = signal::ctrl_c() => r.unwrap(),
     };
     println!("Removing {:?}", socket_path);
-    tokio::fs::remove_file(socket_path).await.unwrap();
+    tokio::fs::remove_file(socket_path).await?;
+
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() {
+    run().await.unwrap()
 }

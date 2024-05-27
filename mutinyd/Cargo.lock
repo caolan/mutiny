@@ -1670,7 +1670,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mutiny"
+name = "mutinyd"
 version = "0.1.0"
 dependencies = [
  "libp2p",
