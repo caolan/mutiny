@@ -2,7 +2,8 @@
 
 import { resolve } from "https://deno.land/std@0.224.0/path/mod.ts";
 import { writeAll } from "https://deno.land/std@0.224.0/io/mod.ts";
-import { TextLineStream } from "https://deno.land/std@0.224.0/streams/mod.ts";
+import * as msgpack from "https://deno.land/std@0.224.0/msgpack/mod.ts";
+import { readFullBuffer } from "./streams.ts";
 
 function ifDefined<T, R>(value: undefined | T, f: (value: T) => R): R | undefined {
     return (value === undefined) ? undefined : f(value);
@@ -45,20 +46,39 @@ export async function connect({socket_path}: ConnectOptions): Promise<MutinyClie
     return new MutinyClient(conn);
 }
 
+type MutinyRequest = {Ping: null};
+type MutinyResponse = {Pong: null};
+
 export class MutinyClient {
     constructor(
         private conn: Deno.UnixConn,
     ) {}
 
+    private async request(request: MutinyRequest): Promise<MutinyResponse> {
+        // reused for both request and response
+        let length_buf = new ArrayBuffer(4);
 
-    async ping(): Promise<string> {
-        await writeAll(this.conn, new TextEncoder().encode("ping\n"));
-        const lines = this.conn.readable
-            .pipeThrough(new TextDecoderStream())
-            .pipeThrough(new TextLineStream());
-        for await (const line of lines) {
-            return line;
-        }
-        throw new Error('No response');
+        // send request
+        const encoded = msgpack.encode(request);
+        new DataView(length_buf).setUint32(0, encoded.byteLength, false);
+        await writeAll(this.conn, new Uint8Array(length_buf, 0));
+        await writeAll(this.conn, encoded);
+
+        // read response
+        const reader = this.conn.readable.getReader({mode: "byob"});
+        length_buf = await readFullBuffer(reader, length_buf);
+        const response_len = new DataView(length_buf).getUint32(0, false);
+        const response_buf = await readFullBuffer(
+            reader,
+            new ArrayBuffer(response_len),
+        );
+        reader.releaseLock();
+        return msgpack.decode(
+            new Uint8Array(response_buf)
+        ) as MutinyResponse;
+    }
+
+    async ping(): Promise<MutinyResponse> {
+        return await this.request({Ping: null});
     }
 }

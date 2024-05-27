@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 tokio = { version = "1.37.0", features = ["full"] }
 libp2p = { version = "0.53.2", features = ["tcp", "quic", "tls", "dns", "noise", "yamux", "websocket", "ping", "macros", "tokio", "gossipsub", "mdns"] }
+serde = { version = "1.0.203", features = ["derive"] }
+rmp-serde = "1.3.0"
