@@ -1,8 +1,10 @@
 <h1>Ping example</h1>
-<pre id="response"></pre>
+
+<dt>Local peer ID</dt>
+<dd id="local_peer_id"></dd>
 
 <script>
-    fetch("/_api/ping").then(async (res) => {
-        response.textContent = await res.text();
+    fetch("/_api/v1/local_peer_id").then(async (res) => {
+        local_peer_id.textContent = await res.text();
     });
 </script>

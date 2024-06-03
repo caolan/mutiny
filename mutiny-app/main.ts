@@ -15,8 +15,10 @@ class Server {
     async serveAPI(request: Request) {
         const url = new URL(request.url);
         const pathname = url.pathname;
-        if (pathname === '/_api/ping') {
+        if (pathname === '/_api/v1/ping') {
             return new Response(await this.client.ping());
+        } else if (pathname === '/_api/v1/local_peer_id') {
+            return new Response(await this.client.localPeerId());
         } else {
             return new Response(`API response for ${pathname}`);
         }

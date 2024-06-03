@@ -97,7 +97,10 @@ impl Server {
         Ok(())
     }
 
-    async fn handle_request(&self, _request: Request) -> Result<Response, Box<dyn Error>> {
-        Ok(Response::Pong {})
+    async fn handle_request(&self, request: Request) -> Result<Response, Box<dyn Error>> {
+        match request {
+            Request::Ping => Ok(Response::Pong),
+            Request::LocalPeerId => Ok(Response::LocalPeerId(self.swarm.local_peer_id().to_base58())),
+        }
     }
 }

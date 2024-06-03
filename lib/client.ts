@@ -4,6 +4,7 @@ import { resolve } from "https://deno.land/std@0.224.0/path/mod.ts";
 import { writeAll } from "https://deno.land/std@0.224.0/io/mod.ts";
 import * as msgpack from "https://deno.land/std@0.224.0/msgpack/mod.ts";
 import { readFullBuffer } from "./streams.ts";
+import { assert } from "./assert.ts";
 
 function ifDefined<T, R>(value: undefined | T, f: (value: T) => R): R | undefined {
     return (value === undefined) ? undefined : f(value);
@@ -46,8 +47,8 @@ export async function connect({socket_path}: ConnectOptions): Promise<MutinyClie
     return new MutinyClient(conn);
 }
 
-type MutinyRequest = {Ping: null};
-type MutinyResponse = {Pong: null};
+type MutinyRequest = {Ping: null} | {LocalPeerId: null};
+type MutinyResponse = {Pong: null} | {LocalPeerId: string};
 
 export class MutinyClient {
     constructor(
@@ -78,7 +79,13 @@ export class MutinyClient {
         ) as MutinyResponse;
     }
 
-    async ping(): Promise<MutinyResponse> {
-        return await this.request({Ping: null});
+    async ping(): Promise<undefined> {
+        await this.request({Ping: null});
+    }
+
+    async localPeerId(): Promise<string> {
+        const response = await this.request({LocalPeerId: null});
+        assert('LocalPeerId' in response);
+        return response.LocalPeerId;
     }
 }

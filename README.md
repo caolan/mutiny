@@ -43,5 +43,4 @@ Then, serve the app:
 ./mutiny-app/mutiny-app examples/ping
 ```
 
-And open the displayed URL in your browser. You should see the message:
-'Hello from mutinyd'.
+And open the displayed URL in your browser. You should see your local peer ID.
