@@ -3,8 +3,23 @@
 <dt>Local peer ID</dt>
 <dd id="local_peer_id"></dd>
 
+<h2>Discovered peers</h2>
+<ul id="discovered_peers"></ul>
+
 <script>
     fetch("/_api/v1/local_peer_id").then(async (res) => {
         local_peer_id.textContent = await res.text();
     });
+    async function updatePeers() {
+        const res = await fetch("/_api/v1/peers");
+        const data = await res.json();
+        const peers = data.map(peer => {
+            const li = document.createElement('li');
+            li.textContent = peer.id;
+            return li;
+        });
+        discovered_peers.replaceChildren(...peers);
+    }
+    setInterval(updatePeers, 1000);
+    updatePeers();
 </script>

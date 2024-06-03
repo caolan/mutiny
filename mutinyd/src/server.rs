@@ -1,11 +1,12 @@
 use tokio::net::UnixStream;
 use tokio::{signal, net::UnixListener, net::unix::SocketAddr, sync::mpsc};
-use libp2p::{mdns, swarm::SwarmEvent, futures::stream::StreamExt, core::ConnectedPoint};
+use libp2p::{mdns, swarm::SwarmEvent, futures::stream::StreamExt, core::ConnectedPoint, Multiaddr, PeerId};
+use std::collections::HashSet;
 use std::error::Error;
 
 use crate::swarm;
 use crate::config::Config;
-use crate::protocol::{Request, Response};
+use crate::protocol::{Request, Response, Peer};
 use crate::client::{create_client, ClientRequest};
 
 type Swarm = libp2p::swarm::Swarm<libp2p::mdns::tokio::Behaviour>;
@@ -15,6 +16,7 @@ pub struct Server {
     listener: UnixListener,
     client_request_receiver: mpsc::Receiver<ClientRequest>,
     client_request_sender: mpsc::Sender<ClientRequest>,
+    peers: HashSet<(PeerId, Multiaddr)>,
 }
 
 impl Server {
@@ -28,6 +30,7 @@ impl Server {
             swarm: swarm::start(config.keypair).await?,
             client_request_receiver: rx,
             client_request_sender: tx,
+            peers: HashSet::new(),
         };
         server.run().await;
         println!("Removing {:?}", config.socket_path);
@@ -58,16 +61,18 @@ impl Server {
         tokio::spawn(client.start());
     }
 
-    async fn swarm_event(&self, event: SwarmEvent<mdns::Event>) -> Result<(), Box<dyn Error>> {
+    async fn swarm_event(&mut self, event: SwarmEvent<mdns::Event>) -> Result<(), Box<dyn Error>> {
         match event {
             SwarmEvent::Behaviour(mdns::Event::Discovered(list)) => {
-                for (peer_id, _multiaddr) in list {
+                for (peer_id, multiaddr) in list {
                     println!("mDNS discovered a new peer: {peer_id}");
+                    self.peers.insert((peer_id, multiaddr));
                 }
             },
             SwarmEvent::Behaviour(mdns::Event::Expired(list)) => {
-                for (peer_id, _multiaddr) in list {
+                for (peer_id, multiaddr) in list {
                     println!("mDNS discover peer has expired: {peer_id}");
+                    self.peers.remove(&(peer_id, multiaddr));
                 }
             },
             SwarmEvent::NewListenAddr { address, .. } => {
@@ -101,6 +106,16 @@ impl Server {
         match request {
             Request::Ping => Ok(Response::Pong),
             Request::LocalPeerId => Ok(Response::LocalPeerId(self.swarm.local_peer_id().to_base58())),
+            Request::Peers => {
+                let mut peers: Vec<Peer> = Vec::new();
+                for (id, addr) in self.peers.iter() {
+                    peers.push(Peer {
+                        id: id.to_base58(),
+                        addr: addr.to_string(),
+                    });
+                }
+                Ok(Response::Peers(peers))
+            },
         }
     }
 }

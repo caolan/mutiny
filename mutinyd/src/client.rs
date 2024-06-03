@@ -41,7 +41,7 @@ impl<Reader: AsyncBufRead + AsyncReadExt + Unpin, Writer: AsyncWrite + AsyncWrit
         // The rmp_serde::Serializer is not async and can not write
         // directly to an AsyncWrite, write to a buffer first.
         let mut serialized = Vec::<u8>::new();
-        response.serialize(&mut Serializer::new(&mut serialized))?;
+        response.serialize(&mut Serializer::new(&mut serialized).with_struct_map())?;
         let len = u32::try_from(serialized.len())?;
         self.writer.write_all(&len.to_be_bytes()).await?;
         self.writer.write_all(&serialized).await?;

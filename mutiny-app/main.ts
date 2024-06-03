@@ -19,6 +19,8 @@ class Server {
             return new Response(await this.client.ping());
         } else if (pathname === '/_api/v1/local_peer_id') {
             return new Response(await this.client.localPeerId());
+        } else if (pathname === '/_api/v1/peers') {
+            return new Response(JSON.stringify(await this.client.peers()));
         } else {
             return new Response(`API response for ${pathname}`);
         }

@@ -43,4 +43,7 @@ Then, serve the app:
 ./mutiny-app/mutiny-app examples/ping
 ```
 
-And open the displayed URL in your browser. You should see your local peer ID.
+And open the displayed URL in your browser. You should see your local peer
+ID at the top of the page and a (potentially empty) list of discovered
+peers below. Repeating this process on another machine on your local
+network will hopefully add a discovered peer to the list.

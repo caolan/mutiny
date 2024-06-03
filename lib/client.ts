@@ -47,8 +47,13 @@ export async function connect({socket_path}: ConnectOptions): Promise<MutinyClie
     return new MutinyClient(conn);
 }
 
-type MutinyRequest = {Ping: null} | {LocalPeerId: null};
-type MutinyResponse = {Pong: null} | {LocalPeerId: string};
+type MutinyRequest = {Ping: null} 
+    | {LocalPeerId: null}
+    | {Peers: null};
+
+type MutinyResponse = {Pong: null} 
+    | {LocalPeerId: string}
+    | {Peers: {id: string, addr: string}[]};
 
 export class MutinyClient {
     constructor(
@@ -87,5 +92,11 @@ export class MutinyClient {
         const response = await this.request({LocalPeerId: null});
         assert('LocalPeerId' in response);
         return response.LocalPeerId;
+    }
+
+    async peers(): Promise<{id: string, addr: string}[]> {
+        const response = await this.request({Peers: null});
+        assert('Peers' in response);
+        return response.Peers;
     }
 }

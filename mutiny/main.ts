@@ -4,4 +4,5 @@ if (import.meta.main) {
     const socket_path = defaultSocketPath(); 
     const client = await connect({socket_path});
     console.log(await client.localPeerId());
+    console.log(await client.peers());
 }
