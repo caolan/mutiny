@@ -5,7 +5,7 @@ pub enum Request {
     Ping,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug, Clone)]
 pub enum Response {
     Pong,
 }

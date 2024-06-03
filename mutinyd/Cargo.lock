@@ -618,6 +618,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "error_set"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1486579b4d961f6462e6919337a7d23e989d0cb8b80706a2c184fc2dfd4d7f81"
+dependencies = [
+ "error_set_impl",
+]
+
+[[package]]
+name = "error_set_impl"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "caa11d9b6429dad602895a2f5e6fccce0980f1e20d8ef15155d7dc8c13d8fef7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.61",
+]
+
+[[package]]
 name = "event-listener"
 version = "4.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1673,6 +1693,7 @@ dependencies = [
 name = "mutinyd"
 version = "0.1.0"
 dependencies = [
+ "error_set",
  "libp2p",
  "rmp-serde",
  "serde",
