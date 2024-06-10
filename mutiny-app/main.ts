@@ -6,6 +6,10 @@ import { join } from "@std/path";
 class Server {
     constructor (
         private client: MutinyClient,
+        private instance: {
+            name: string,
+            uuid: string,
+        },
         private root: string,
     ) {}
 
@@ -19,6 +23,8 @@ class Server {
         const pathname = url.pathname;
         if (pathname === '/_api/v1/ping') {
             return new Response(await this.client.ping());
+        } else if (pathname === '/_api/v1/application_instance') {
+            return new Response(JSON.stringify(this.instance));
         } else if (pathname === '/_api/v1/local_peer_id') {
             return new Response(await this.client.localPeerId());
         } else if (pathname === '/_api/v1/peers') {
@@ -39,20 +45,33 @@ class Server {
             hostname: '127.0.0.1',
             port: 0,
             onListen: addr => {
-                console.log(`Serving ${this.root}`);
-                console.log(`  from http://${addr.hostname}:${addr.port}/`);
+                console.log("Application instance:");
+                console.log(`  uuid: ${this.instance.uuid}`);
+                console.log(`  name: ${this.instance.name}`); 
+                console.log("");
+                console.log(`Serving ${this.root}:`);
+                console.log(`  http://${addr.hostname}:${addr.port}/`);
             },
         }, this.handleRequest.bind(this));
     }
 }
 
 if (import.meta.main) {
+    if (Deno.args.length < 1) {
+        console.error("Usage: mutiny-app INSTANCE_NAME [PATH]");
+        Deno.exit(1);
+    }
     const socket_path = defaultSocketPath(); 
-    const root = Deno.args[0] || '.';
+    const name = Deno.args[0];
+    const root = Deno.args[1] || '.';
     const manifest = await readManifest(join(root, "mutiny.json"));
 
     const client = await connect({socket_path});
-    const server = new Server(client, root);
+    const uuid = (
+        await client.appInstanceUuid(name) ?? 
+        await client.createAppInstance(name, manifest)
+    );
 
+    const server = new Server(client, {name, uuid}, root);
     server.serve();
 }

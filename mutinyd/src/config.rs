@@ -4,6 +4,7 @@ use std::error::Error;
 use libp2p::identity::Keypair;
 use std::io::Write;
 use std::fs;
+use rusqlite;
 
 use crate::dirs;
 
@@ -11,12 +12,14 @@ use crate::dirs;
 pub struct Config {
     pub keypair: Keypair,
     pub socket_path: PathBuf,
+    pub db_connection: rusqlite::Connection,
 }
 
 impl Config {
     pub fn load(
         keypair_path: PathBuf,
         socket_path: PathBuf,
+        db_path: PathBuf,
     ) -> Result<Self, Box<dyn Error>> {
         println!("Reading identity {:?}", keypair_path);
         let keypair = if keypair_path.exists() {
@@ -31,12 +34,14 @@ impl Config {
             f.write_all(&encoded)?;
             k
         };
-        Ok(Self { keypair, socket_path })
+        let db_connection = rusqlite::Connection::open(db_path)?;
+        Ok(Self { keypair, socket_path, db_connection })
     }
 
     pub fn load_defaults() -> Result<Self, Box<dyn Error>> {
         let socket_path = dirs::open_app_runtime_dir()?.join("mutinyd.socket");
         let keypair_path = dirs::open_app_data_dir()?.join("identity.key");
-        Self::load(keypair_path, socket_path)
+        let db_path = dirs::open_app_data_dir()?.join("data.db");
+        Self::load(keypair_path, socket_path, db_path)
     }
 }

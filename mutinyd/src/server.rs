@@ -3,10 +3,13 @@ use tokio::{signal, net::UnixListener, net::unix::SocketAddr, sync::mpsc};
 use libp2p::{mdns, swarm::SwarmEvent, futures::stream::StreamExt, core::ConnectedPoint, Multiaddr, PeerId};
 use std::collections::HashSet;
 use std::error::Error;
+use rusqlite::OptionalExtension;
+use rusqlite;
+use uuid::Uuid;
 
 use crate::swarm;
 use crate::config::Config;
-use crate::protocol::{Request, Response, Peer};
+use crate::protocol::{Request, Response, Peer, Manifest};
 use crate::client::{create_client, ClientRequest};
 
 type Swarm = libp2p::swarm::Swarm<libp2p::mdns::tokio::Behaviour>;
@@ -17,6 +20,7 @@ pub struct Server {
     client_request_receiver: mpsc::Receiver<ClientRequest>,
     client_request_sender: mpsc::Sender<ClientRequest>,
     peers: HashSet<(PeerId, Multiaddr)>,
+    db: rusqlite::Connection,
 }
 
 impl Server {
@@ -31,11 +35,113 @@ impl Server {
             client_request_receiver: rx,
             client_request_sender: tx,
             peers: HashSet::new(),
+            db: config.db_connection,
         };
+        server.migrate()?;
         server.run().await;
         println!("Removing {:?}", config.socket_path);
         tokio::fs::remove_file(config.socket_path.as_path()).await?;
         Ok(())
+    }
+
+    fn version(&self) -> rusqlite::Result<i64> {
+        let mut stmt = self.db.prepare_cached("SELECT user_version FROM pragma_user_version")?;
+        return stmt.query_row([], |row| row.get::<_, i64>(0))
+    }
+
+    // fn set_version(&self, version: i64) -> rusqlite::Result<()> {
+    //     self.db.pragma_update(None, "user_version", version)
+    // }
+
+    fn migrate(&self) -> rusqlite::Result<()> {
+        if self.version()? == 0 {
+            println!("Migrating database to version 1");
+            self.db.execute_batch(
+                "BEGIN;
+                 CREATE TABLE application (
+                    id INTEGER PRIMARY KEY,
+                    manifest_id TEXT UNIQUE NOT NULL
+                 );
+                 CREATE TABLE application_version (
+                    id INTEGER PRIMARY KEY,
+                    application_id INTEGER REFERENCES application(id) NOT NULL,
+                    manifest_version TEXT NOT NULL,
+                    UNIQUE(application_id, manifest_version)
+                 );
+                 CREATE TABLE application_instance (
+                    id INTEGER PRIMARY KEY,
+                    uuid TEXT UNIQUE NOT NULL,
+                    name TEXT UNIQUE NOT NULL,
+                    application_version_id INTEGER REFERENCES application_version(id) NOT NULL
+                 );
+                 PRAGMA user_version = 1;
+                 COMMIT;",
+            )?;
+        }
+        Ok(())
+    }
+
+    fn get_application_id(&self, manifest_id: &str) -> rusqlite::Result<Option<i64>> {
+        let mut stmt = self.db.prepare_cached(
+            "SELECT id FROM application WHERE manifest_id = ?1"
+        )?;
+        stmt.query_row([manifest_id], |row| row.get::<_, i64>(0)).optional()
+    }
+
+    fn put_application(&self, manifest_id: &str) -> rusqlite::Result<i64> {
+        let mut stmt = self.db.prepare_cached(
+            "INSERT INTO application (manifest_id) VALUES (?1) RETURNING id"
+        )?;
+        stmt.query_row([manifest_id], |row| row.get::<_, i64>(0))
+    }
+
+    fn get_application_version_id(&self, application_id: i64, manifest_version: &str) -> rusqlite::Result<Option<i64>> {
+        let mut stmt = self.db.prepare_cached(
+            "SELECT id FROM application_version WHERE application_id = ?1 AND manifest_version = ?2"
+        )?;
+        stmt.query_row(rusqlite::params![application_id, manifest_version], |row| row.get::<_, i64>(0)).optional()
+    }
+
+    fn put_application_version(&self, application_id: i64, manifest_version: &str) -> rusqlite::Result<i64> {
+        let mut stmt = self.db.prepare_cached(
+            "INSERT INTO application_version (application_id, manifest_version) VALUES (?1, ?2) RETURNING id"
+        )?;
+        stmt.query_row(rusqlite::params![application_id, manifest_version], |row| row.get::<_, i64>(0))
+    }
+
+    fn get_application_instance_uuid(&self, name: &str) -> rusqlite::Result<Option<String>> {
+        let mut stmt = self.db.prepare_cached(
+            "SELECT uuid FROM application_instance WHERE name = ?1"
+        )?;
+        stmt.query_row([name], |row| row.get::<_, String>(0)).optional()
+    }
+
+    fn create_application_instance(&self, name: &str, manifest: &Manifest) -> Result<String, Box<dyn Error>> {
+        if name.is_empty() {
+            return Err(Box::<dyn Error>::from("Application instance name cannot be empty"));
+        }
+        let application_id;
+        if let Some(id) = self.get_application_id(&manifest.id)? {
+            application_id = id;
+        } else {
+            application_id = self.put_application(&manifest.id)?;
+        }
+        let application_version_id;
+        if let Some(id) = self.get_application_version_id(application_id, &manifest.version)? {
+            application_version_id = id;
+        } else {
+            application_version_id = self.put_application_version(application_id, &manifest.version)?;
+        }
+        let mut stmt = self.db.prepare_cached(
+            "INSERT INTO application_instance (uuid, name, application_version_id)
+             VALUES (?1, ?2, ?3) RETURNING uuid"
+        )?;
+        let buffer = &mut Uuid::encode_buffer();
+        let uuid: &str = Uuid::new_v4().hyphenated().encode_lower(buffer);
+        Ok(stmt.query_row(
+            rusqlite::params![uuid, name, application_version_id],
+            |row| row.get::<_, String>(0),
+        )?)
     }
 
     async fn run(&mut self) -> () {
@@ -105,7 +211,21 @@ impl Server {
     async fn handle_request(&self, request: Request) -> Result<Response, Box<dyn Error>> {
         match request {
             Request::Ping => Ok(Response::Pong),
-            Request::LocalPeerId => Ok(Response::LocalPeerId(self.swarm.local_peer_id().to_base58())),
+            Request::CreateAppInstance {name, manifest} => {
+                match self.create_application_instance(&name, &manifest) {
+                    Ok(uuid) => Ok(Response::CreateAppInstance(uuid)),
+                    Err(err) => Ok(Response::Error(format!("{}", err))),
+                }
+            },
+            Request::AppInstanceUuid(name) => {
+                match self.get_application_instance_uuid(&name) {
+                    Ok(uuid) => Ok(Response::AppInstanceUuid(uuid)),
+                    Err(err) => Ok(Response::Error(format!("{}", err))),
+                }
+            },
+            Request::LocalPeerId => Ok(Response::LocalPeerId(
+                self.swarm.local_peer_id().to_base58()
+            )),
             Request::Peers => {
                 let mut peers: Vec<Peer> = Vec::new();
                 for (id, addr) in self.peers.iter() {
