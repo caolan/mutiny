@@ -1,13 +1,14 @@
+use libp2p::swarm::NetworkBehaviour;
 use tokio::net::UnixStream;
 use tokio::{signal, net::UnixListener, net::unix::SocketAddr, sync::mpsc};
-use libp2p::{mdns, swarm::SwarmEvent, futures::stream::StreamExt, core::ConnectedPoint, Multiaddr, PeerId};
+use libp2p::{mdns, swarm::SwarmEvent, futures::stream::StreamExt, core::ConnectedPoint, Multiaddr, PeerId, request_response};
 use std::collections::HashSet;
 use std::error::Error;
 use rusqlite::OptionalExtension;
 use rusqlite;
 use uuid::Uuid;
 
-use crate::swarm;
+use crate::swarm::{self, MutinyBehaviourEvent};
 use crate::config::Config;
 use crate::protocol::{Request, Response, Peer, Manifest};
 use crate::client::{create_client, ClientRequest};
@@ -54,29 +55,54 @@ impl Server {
     // }
 
     fn migrate(&self) -> rusqlite::Result<()> {
-        if self.version()? == 0 {
-            println!("Migrating database to version 1");
-            self.db.execute_batch(
-                "BEGIN;
-                 CREATE TABLE application (
-                    id INTEGER PRIMARY KEY,
-                    manifest_id TEXT UNIQUE NOT NULL
-                 );
-                 CREATE TABLE application_version (
-                    id INTEGER PRIMARY KEY,
-                    application_id INTEGER REFERENCES application(id) NOT NULL,
-                    manifest_version TEXT NOT NULL,
-                    UNIQUE(application_id, manifest_version)
-                 );
-                 CREATE TABLE application_instance (
-                    id INTEGER PRIMARY KEY,
-                    uuid TEXT UNIQUE NOT NULL,
-                    name TEXT UNIQUE NOT NULL,
-                    application_version_id INTEGER REFERENCES application_version(id) NOT NULL
-                 );
-                 PRAGMA user_version = 1;
-                 COMMIT;",
-            )?;
+        while let version = self.version()? {
+            match version {
+                0 => {
+                    println!("Migrating database to version 1");
+                    self.db.execute_batch(
+                        "BEGIN;
+                         CREATE TABLE application (
+                             id INTEGER PRIMARY KEY,
+                             manifest_id TEXT UNIQUE NOT NULL
+                         );
+                         CREATE TABLE application_version (
+                             id INTEGER PRIMARY KEY,
+                             application_id INTEGER REFERENCES application(id) NOT NULL,
+                             manifest_version TEXT NOT NULL,
+                             UNIQUE(application_id, manifest_version)
+                         );
+                         CREATE TABLE application_instance (
+                             id INTEGER PRIMARY KEY,
+                             uuid TEXT UNIQUE NOT NULL,
+                             name TEXT UNIQUE NOT NULL,
+                             application_version_id INTEGER REFERENCES application_version(id) NOT NULL
+                         );
+                         PRAGMA user_version = 1;
+                         COMMIT;",
+                    )?;
+                },
+                1 => {
+                    println!("Migrating database to version 2");
+                    self.db.execute_batch(
+                        "BEGIN;
+                         CREATE TABLE peer (
+                             id INTEGER PRIMARY KEY,
+                             addr TEXT UNIQUE NOT NULL
+                         );
+                         CREATE TABLE remote_application_instance (
+                             peer_id INTEGER REFERENCES peer(id) NOT NULL,
+                             uuid TEXT UNIQUE NOT NULL,
+                             application_version_id INTEGER REFERENCES application_version(id) NOT NULL
+                         );
+                         CREATE TABLE accept (
+                             peer_id INTEGER REFERENCES peer(id) NOT NULL,
+                             application_instance_id INTEGER REFERENCES application_instance(id) NOT NULL
+                         );
+                         PRAGMA user_version = 2;
+                         COMMIT;",
+                    )?;
+                }
+            }
         }
         Ok(())
     }
@@ -116,6 +142,27 @@ impl Server {
         stmt.query_row([name], |row| row.get::<_, String>(0)).optional()
     }
 
+    fn get_application_instance_id_from_uuid(&self, uuid: &str) -> rusqlite::Result<i64> {
+        let mut stmt = self.db.prepare_cached(
+            "SELECT id FROM application_instance WHERE uuid = ?1"
+        )?;
+        stmt.query_row([uuid], |row| row.get::<_, i64>(0))
+    }
+
+    fn get_peer_id(&self, addr: &str) -> rusqlite::Result<Option<i64>> {
+        let mut stmt = self.db.prepare_cached(
+            "SELECT id FROM peer WHERE addr = ?1"
+        )?;
+        stmt.query_row([addr], |row| row.get::<_, i64>(0)).optional()
+    }
+
+    fn put_peer(&self, addr: &str) -> rusqlite::Result<i64> {
+        let mut stmt = self.db.prepare_cached(
+            "INSERT INTO peer (addr) VALUES (?1) RETURNING id"
+        )?;
+        stmt.query_row([addr], |row| row.get::<_, i64>(0))
+    }
+
     fn create_application_instance(&self, name: &str, manifest: &Manifest) -> Result<String, Box<dyn Error>> {
         if name.is_empty() {
             return Err(Box::<dyn Error>::from("Application instance name cannot be empty"));
@@ -144,6 +191,27 @@ impl Server {
         )?)
     }
 
+    fn accept_messages(&self, from_addr: &str, to_uuid: &str) -> Result<(), Box<dyn Error>> {
+        let application_instance_id = self.get_application_instance_id_from_uuid(to_uuid)?;
+        let peer_id;
+        if let Some(id) = self.get_peer_id(from_addr)? {
+            peer_id = id;
+        } else {
+            peer_id = self.put_peer(from_addr)?;
+        }
+        let mut stmt = self.db.prepare_cached(
+            "INSERT INTO accept (peer_id, application_instance_id)
+             VALUES (?1, ?2)"
+        )?;
+        stmt.execute([peer_id, application_instance_id])?;
+        Ok(())
+    }
+
+    // Lets remote peer know we're now accepting messages
+    fn notify_accept_messages(&self, from_peer: String, to_uuid: String) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
+
     async fn run(&mut self) -> () {
         loop {
             tokio::select! {
@@ -167,19 +235,35 @@ impl Server {
         tokio::spawn(client.start());
     }
 
-    async fn swarm_event(&mut self, event: SwarmEvent<mdns::Event>) -> Result<(), Box<dyn Error>> {
+    async fn swarm_event(&mut self, event: SwarmEvent<MutinyBehaviourEvent>) -> Result<(), Box<dyn Error>> {
         match event {
-            SwarmEvent::Behaviour(mdns::Event::Discovered(list)) => {
-                for (peer_id, multiaddr) in list {
-                    println!("mDNS discovered a new peer: {peer_id}");
-                    self.peers.insert((peer_id, multiaddr));
-                }
+            SwarmEvent::Behaviour(swarm::MutinyBehaviourEvent::Mdns(ev)) => match ev {
+                mdns::Event::Discovered(list) => {
+                    for (peer_id, multiaddr) in list {
+                        println!("mDNS discovered a new peer: {peer_id}");
+                        self.peers.insert((peer_id, multiaddr));
+                    }
+                },
+                mdns::Event::Expired(list) => {
+                    for (peer_id, multiaddr) in list {
+                        println!("mDNS discover peer has expired: {peer_id}");
+                        self.peers.remove(&(peer_id, multiaddr));
+                    }
+                },
             },
-            SwarmEvent::Behaviour(mdns::Event::Expired(list)) => {
-                for (peer_id, multiaddr) in list {
-                    println!("mDNS discover peer has expired: {peer_id}");
-                    self.peers.remove(&(peer_id, multiaddr));
-                }
+            SwarmEvent::Behaviour(swarm::MutinyBehaviourEvent::RequestResponse(ev)) => match ev {
+                request_response::Event::Message {peer, message} => {
+                    match message {
+                        Request
+                    }
+                },
+                _ => {},
+                // request_response::Event::OutboundFailure {peer, request_id, error} => {
+                // },
+                // request_response::Event::InboundFailure {peer, request_id, error} => {
+                // },
+                // request_response::Event::ResponseSent {peer, request_id} => {
+                // },
             },
             SwarmEvent::NewListenAddr { address, .. } => {
                 println!("New listener: {address}");

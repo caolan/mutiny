@@ -22,10 +22,15 @@ pub enum Request {
     LocalPeerId,
     Peers,
     Ping,
+    AcceptMessages {
+        peer: String,
+        application_instance_uuid: String,
+    },
 }
 
 #[derive(Serialize, Debug)]
 pub enum Response {
+    Success,
     Error(String),
     CreateAppInstance(String),
     AppInstanceUuid(Option<String>),
@@ -33,4 +38,3 @@ pub enum Response {
     Peers(Vec<Peer>),
     Pong,
 }
-
