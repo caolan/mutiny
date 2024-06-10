@@ -1,5 +1,7 @@
-import { serveDir } from "https://deno.land/std@0.224.0/http/file_server.ts";
 import { connect, defaultSocketPath, MutinyClient } from "../lib/client.ts";
+import { readManifest } from "../lib/manifest.ts";
+import { serveDir } from "@std/http";
+import { join } from "@std/path";
 
 class Server {
     constructor (
@@ -47,6 +49,7 @@ class Server {
 if (import.meta.main) {
     const socket_path = defaultSocketPath(); 
     const root = Deno.args[0] || '.';
+    const manifest = await readManifest(join(root, "mutiny.json"));
 
     const client = await connect({socket_path});
     const server = new Server(client, root);

@@ -1,8 +1,8 @@
 // A client library to talk to the mutiny daemon via unix socket
 
-import { resolve } from "https://deno.land/std@0.224.0/path/mod.ts";
-import { writeAll } from "https://deno.land/std@0.224.0/io/mod.ts";
-import * as msgpack from "https://deno.land/std@0.224.0/msgpack/mod.ts";
+import { resolve } from "@std/path";
+import { writeAll } from "@std/io";
+import * as msgpack from "@std/msgpack";
 import { readFullBuffer } from "./streams.ts";
 import { assert } from "./assert.ts";
 

@@ -1,5 +1,10 @@
 {
   "tasks": {
     "dev": "deno run --watch main.ts"
+  },
+  "imports": {
+    "@std/io": "jsr:@std/io@^0.224.1",
+    "@std/msgpack": "jsr:@std/msgpack@^0.224.2",
+    "@std/path": "jsr:@std/path@^0.225.2"
   }
 }
