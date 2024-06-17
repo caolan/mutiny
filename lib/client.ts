@@ -48,18 +48,34 @@ export async function connect({socket_path}: ConnectOptions): Promise<MutinyClie
     return new MutinyClient(conn);
 }
 
-type MutinyRequest = {Ping: null} 
-    | {LocalPeerId: null}
-    | {Peers: null}
-    | {AppInstanceUuid: string}
-    | {CreateAppInstance: {name: string, manifest: Manifest}};
+type Message = {
+    peer: string,
+    uuid: string,
+    message: Uint8Array,
+};
 
-type MutinyResponse = {Error: string}
-    | {Pong: null} 
+type MutinyRequest = {LocalPeerId: null}
+    | {Peers: null}
+    | {Invites: null}
+    | {AppInstanceUuid: string}
+    | {CreateAppInstance: {label: string, manifest: Manifest}}
+    | {MessageInvite: {peer: string, app_instance_uuid: string}}
+    | {MessageSend: {
+        peer: string,
+        app_instance_uuid: string,
+        from_app_instance_uuid: string,
+        message: Uint8Array}}
+    | {ReadMessage: string}
+    | {NextMessage: string};
+
+type MutinyResponse = {Success: null} 
+    | {Error: string}
     | {LocalPeerId: string}
-    | {Peers: {id: string, addr: string}[]}
+    | {Peers: string[]}
     | {AppInstanceUuid: string | null}
-    | {CreateAppInstance: string};
+    | {CreateAppInstance: string}
+    | {Message: null | Message};
+    // | {Invites: {peer: string, app_instance_uuid: string}[]};
 
 export class MutinyClient {
     constructor(
@@ -94,31 +110,67 @@ export class MutinyClient {
         return response;
     }
 
-    async ping(): Promise<undefined> {
-        await this.request({Ping: null});
-    }
-
     async localPeerId(): Promise<string> {
         const response = await this.request({LocalPeerId: null});
         assert('LocalPeerId' in response);
         return response.LocalPeerId;
     }
 
-    async peers(): Promise<{id: string, addr: string}[]> {
+    async peers(): Promise<string[]> {
         const response = await this.request({Peers: null});
         assert('Peers' in response);
         return response.Peers;
     }
 
-    async appInstanceUuid(name: string): Promise<string | null> {
+    async appInstanceUuid(label: string): Promise<string | null> {
         const response = await this.request({AppInstanceUuid: name});
         assert('AppInstanceUuid' in response);
         return response.AppInstanceUuid;
     }
 
-    async createAppInstance(name: string, manifest: Manifest): Promise<string> {
-        const response = await this.request({CreateAppInstance: {name, manifest}});
+    async createAppInstance(label: string, manifest: Manifest): Promise<string> {
+        const response = await this.request({CreateAppInstance: {label, manifest}});
         assert('CreateAppInstance' in response);
         return response.CreateAppInstance;
     }
+
+    async messageInvite(peer: string, app_instance_uuid: string): Promise<void> {
+        const response = await this.request({MessageInvite: {peer, app_instance_uuid}});
+        assert('Success' in response);
+        return;
+    }
+
+    async messageSend(
+        peer: string,
+        app_instance_uuid: string,
+        from_app_instance_uuid: string,
+        message: Uint8Array
+    ): Promise<void> {
+        const response = await this.request({MessageSend: {
+            peer, 
+            app_instance_uuid,
+            from_app_instance_uuid,
+            message
+        }});
+        assert('Success' in response);
+        return;
+    }
+
+    async readMessage(app_instance_uuid: string): Promise<Message | null> {
+        const response = await this.request({ReadMessage: app_instance_uuid});
+        assert('Message' in response);
+        return response.Message;
+    }
+
+    async nextMessage(app_instance_uuid: string): Promise<void> {
+        const response = await this.request({NextMessage: app_instance_uuid});
+        assert('Success' in response);
+        return;
+    }
+
+    // async invites(): Promise<{id: string, addr: string}[]> {
+    //     const response = await this.request({Invites: null});
+    //     assert('Invites' in response);
+    //     return response.Invites;
+    // }
 }

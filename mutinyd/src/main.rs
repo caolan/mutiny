@@ -4,6 +4,7 @@ mod dirs;
 mod config;
 mod client;
 mod swarm;
+mod store;
 
 #[tokio::main]
 async fn main() {

@@ -5,25 +5,32 @@ use std::error::Error;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Request {
-    NotifyAccept {
-        peer: String,
-        application_instance_uuid: String,
-        application_id: String,
-        application_version: String,
+    Invite {
+        app_instance_uuid: String,
+        app_id: String,
+        app_version: String,
+    },
+    Message {
+        from_app_instance_uuid: String,
+        to_app_instance_uuid: String,
+        message: Vec<u8>,
     },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Response {
-    Success,
+    Acknowledge,
 }
 
 // A custom network behaviour that combines Request/Response and MDNS.
 #[derive(NetworkBehaviour)]
 pub struct MutinyBehaviour {
-    request_response: request_response::cbor::Behaviour<Request, Response>,
-    mdns: mdns::tokio::Behaviour,
+    pub request_response: request_response::cbor::Behaviour<Request, Response>,
+    pub mdns: mdns::tokio::Behaviour,
 }
+
+pub type Swarm = libp2p::swarm::Swarm<MutinyBehaviour>;
+pub type Message = request_response::Message<Request, Response>;
 
 pub async fn start(keypair: Keypair) -> Result<
     libp2p::swarm::Swarm<MutinyBehaviour>,

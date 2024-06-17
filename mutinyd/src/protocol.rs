@@ -1,11 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Debug)]
-pub struct Peer {
-    pub id: String,
-    pub addr: String,
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Manifest {
     pub id: String,
@@ -15,17 +9,25 @@ pub struct Manifest {
 #[derive(Deserialize)]
 pub enum Request {
     CreateAppInstance {
-        name: String,
+        label: String,
         manifest: Manifest
     },
     AppInstanceUuid(String),
     LocalPeerId,
     Peers,
-    Ping,
-    AcceptMessages {
+    MessageInvite {
         peer: String,
-        application_instance_uuid: String,
+        app_instance_uuid: String,
     },
+    MessageSend {
+        peer: String,
+        app_instance_uuid: String,
+        from_app_instance_uuid: String,
+        message: Vec<u8>,
+    },
+    ReadMessage(String),
+    NextMessage(String),
+    // Invites,
 }
 
 #[derive(Serialize, Debug)]
@@ -35,6 +37,17 @@ pub enum Response {
     CreateAppInstance(String),
     AppInstanceUuid(Option<String>),
     LocalPeerId(String),
-    Peers(Vec<Peer>),
-    Pong,
+    Peers(Vec<String>),
+    Message(Option<Message>),
+    // Invites {
+    //     peer: String,
+    //     app_instance_uuid: String,
+    // },
+}
+
+#[derive(Serialize, Debug)]
+pub struct Message {
+    pub peer: String,
+    pub uuid: String,
+    pub message: Vec<u8>,
 }

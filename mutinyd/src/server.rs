@@ -1,19 +1,16 @@
-use libp2p::swarm::NetworkBehaviour;
+use libp2p::request_response::{InboundRequestId, OutboundRequestId, ResponseChannel};
 use tokio::net::UnixStream;
 use tokio::{signal, net::UnixListener, net::unix::SocketAddr, sync::mpsc};
 use libp2p::{mdns, swarm::SwarmEvent, futures::stream::StreamExt, core::ConnectedPoint, Multiaddr, PeerId, request_response};
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::error::Error;
-use rusqlite::OptionalExtension;
-use rusqlite;
-use uuid::Uuid;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::swarm::{self, MutinyBehaviourEvent};
+use crate::swarm::{self, Swarm, MutinyBehaviourEvent};
 use crate::config::Config;
-use crate::protocol::{Request, Response, Peer, Manifest};
+use crate::protocol::{Request, Response, Manifest, Message};
 use crate::client::{create_client, ClientRequest};
-
-type Swarm = libp2p::swarm::Swarm<libp2p::mdns::tokio::Behaviour>;
+use crate::store::Store;
 
 pub struct Server {
     swarm: Swarm,
@@ -21,14 +18,14 @@ pub struct Server {
     client_request_receiver: mpsc::Receiver<ClientRequest>,
     client_request_sender: mpsc::Sender<ClientRequest>,
     peers: HashSet<(PeerId, Multiaddr)>,
-    db: rusqlite::Connection,
+    peer_id: libp2p::PeerId,
+    delivery_attempts: HashMap<OutboundRequestId, i64>,
+    store: Store,
 }
 
 impl Server {
     pub async fn start(config: Config) -> Result<(), Box<dyn Error>> {
-        println!("  Local peer ID: {}", libp2p::identity::PeerId::from_public_key(
-            &config.keypair.public(),
-        ));
+        let pubkey = &config.keypair.public();
         let (tx, rx) = mpsc::channel(100);
         let mut server = Self {
             listener: UnixListener::bind(config.socket_path.as_path())?,
@@ -36,179 +33,19 @@ impl Server {
             client_request_receiver: rx,
             client_request_sender: tx,
             peers: HashSet::new(),
-            db: config.db_connection,
+            peer_id: libp2p::identity::PeerId::from_public_key(pubkey),
+            delivery_attempts: HashMap::new(),
+            store: Store::new(config.db_connection),
         };
-        server.migrate()?;
+        println!("  Local peer ID: {}", server.peer_id);
+        {
+            let tx = server.store.transaction()?;
+            tx.migrate()?;
+            tx.commit()?;
+        }
         server.run().await;
         println!("Removing {:?}", config.socket_path);
         tokio::fs::remove_file(config.socket_path.as_path()).await?;
-        Ok(())
-    }
-
-    fn version(&self) -> rusqlite::Result<i64> {
-        let mut stmt = self.db.prepare_cached("SELECT user_version FROM pragma_user_version")?;
-        return stmt.query_row([], |row| row.get::<_, i64>(0))
-    }
-
-    // fn set_version(&self, version: i64) -> rusqlite::Result<()> {
-    //     self.db.pragma_update(None, "user_version", version)
-    // }
-
-    fn migrate(&self) -> rusqlite::Result<()> {
-        while let version = self.version()? {
-            match version {
-                0 => {
-                    println!("Migrating database to version 1");
-                    self.db.execute_batch(
-                        "BEGIN;
-                         CREATE TABLE application (
-                             id INTEGER PRIMARY KEY,
-                             manifest_id TEXT UNIQUE NOT NULL
-                         );
-                         CREATE TABLE application_version (
-                             id INTEGER PRIMARY KEY,
-                             application_id INTEGER REFERENCES application(id) NOT NULL,
-                             manifest_version TEXT NOT NULL,
-                             UNIQUE(application_id, manifest_version)
-                         );
-                         CREATE TABLE application_instance (
-                             id INTEGER PRIMARY KEY,
-                             uuid TEXT UNIQUE NOT NULL,
-                             name TEXT UNIQUE NOT NULL,
-                             application_version_id INTEGER REFERENCES application_version(id) NOT NULL
-                         );
-                         PRAGMA user_version = 1;
-                         COMMIT;",
-                    )?;
-                },
-                1 => {
-                    println!("Migrating database to version 2");
-                    self.db.execute_batch(
-                        "BEGIN;
-                         CREATE TABLE peer (
-                             id INTEGER PRIMARY KEY,
-                             addr TEXT UNIQUE NOT NULL
-                         );
-                         CREATE TABLE remote_application_instance (
-                             peer_id INTEGER REFERENCES peer(id) NOT NULL,
-                             uuid TEXT UNIQUE NOT NULL,
-                             application_version_id INTEGER REFERENCES application_version(id) NOT NULL
-                         );
-                         CREATE TABLE accept (
-                             peer_id INTEGER REFERENCES peer(id) NOT NULL,
-                             application_instance_id INTEGER REFERENCES application_instance(id) NOT NULL
-                         );
-                         PRAGMA user_version = 2;
-                         COMMIT;",
-                    )?;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn get_application_id(&self, manifest_id: &str) -> rusqlite::Result<Option<i64>> {
-        let mut stmt = self.db.prepare_cached(
-            "SELECT id FROM application WHERE manifest_id = ?1"
-        )?;
-        stmt.query_row([manifest_id], |row| row.get::<_, i64>(0)).optional()
-    }
-
-    fn put_application(&self, manifest_id: &str) -> rusqlite::Result<i64> {
-        let mut stmt = self.db.prepare_cached(
-            "INSERT INTO application (manifest_id) VALUES (?1) RETURNING id"
-        )?;
-        stmt.query_row([manifest_id], |row| row.get::<_, i64>(0))
-    }
-
-    fn get_application_version_id(&self, application_id: i64, manifest_version: &str) -> rusqlite::Result<Option<i64>> {
-        let mut stmt = self.db.prepare_cached(
-            "SELECT id FROM application_version WHERE application_id = ?1 AND manifest_version = ?2"
-        )?;
-        stmt.query_row(rusqlite::params![application_id, manifest_version], |row| row.get::<_, i64>(0)).optional()
-    }
-
-    fn put_application_version(&self, application_id: i64, manifest_version: &str) -> rusqlite::Result<i64> {
-        let mut stmt = self.db.prepare_cached(
-            "INSERT INTO application_version (application_id, manifest_version) VALUES (?1, ?2) RETURNING id"
-        )?;
-        stmt.query_row(rusqlite::params![application_id, manifest_version], |row| row.get::<_, i64>(0))
-    }
-
-    fn get_application_instance_uuid(&self, name: &str) -> rusqlite::Result<Option<String>> {
-        let mut stmt = self.db.prepare_cached(
-            "SELECT uuid FROM application_instance WHERE name = ?1"
-        )?;
-        stmt.query_row([name], |row| row.get::<_, String>(0)).optional()
-    }
-
-    fn get_application_instance_id_from_uuid(&self, uuid: &str) -> rusqlite::Result<i64> {
-        let mut stmt = self.db.prepare_cached(
-            "SELECT id FROM application_instance WHERE uuid = ?1"
-        )?;
-        stmt.query_row([uuid], |row| row.get::<_, i64>(0))
-    }
-
-    fn get_peer_id(&self, addr: &str) -> rusqlite::Result<Option<i64>> {
-        let mut stmt = self.db.prepare_cached(
-            "SELECT id FROM peer WHERE addr = ?1"
-        )?;
-        stmt.query_row([addr], |row| row.get::<_, i64>(0)).optional()
-    }
-
-    fn put_peer(&self, addr: &str) -> rusqlite::Result<i64> {
-        let mut stmt = self.db.prepare_cached(
-            "INSERT INTO peer (addr) VALUES (?1) RETURNING id"
-        )?;
-        stmt.query_row([addr], |row| row.get::<_, i64>(0))
-    }
-
-    fn create_application_instance(&self, name: &str, manifest: &Manifest) -> Result<String, Box<dyn Error>> {
-        if name.is_empty() {
-            return Err(Box::<dyn Error>::from("Application instance name cannot be empty"));
-        }
-        let application_id;
-        if let Some(id) = self.get_application_id(&manifest.id)? {
-            application_id = id;
-        } else {
-            application_id = self.put_application(&manifest.id)?;
-        }
-        let application_version_id;
-        if let Some(id) = self.get_application_version_id(application_id, &manifest.version)? {
-            application_version_id = id;
-        } else {
-            application_version_id = self.put_application_version(application_id, &manifest.version)?;
-        }
-        let mut stmt = self.db.prepare_cached(
-            "INSERT INTO application_instance (uuid, name, application_version_id)
-             VALUES (?1, ?2, ?3) RETURNING uuid"
-        )?;
-        let buffer = &mut Uuid::encode_buffer();
-        let uuid: &str = Uuid::new_v4().hyphenated().encode_lower(buffer);
-        Ok(stmt.query_row(
-            rusqlite::params![uuid, name, application_version_id],
-            |row| row.get::<_, String>(0),
-        )?)
-    }
-
-    fn accept_messages(&self, from_addr: &str, to_uuid: &str) -> Result<(), Box<dyn Error>> {
-        let application_instance_id = self.get_application_instance_id_from_uuid(to_uuid)?;
-        let peer_id;
-        if let Some(id) = self.get_peer_id(from_addr)? {
-            peer_id = id;
-        } else {
-            peer_id = self.put_peer(from_addr)?;
-        }
-        let mut stmt = self.db.prepare_cached(
-            "INSERT INTO accept (peer_id, application_instance_id)
-             VALUES (?1, ?2)"
-        )?;
-        stmt.execute([peer_id, application_instance_id])?;
-        Ok(())
-    }
-
-    // Lets remote peer know we're now accepting messages
-    fn notify_accept_messages(&self, from_peer: String, to_uuid: String) -> Result<(), Box<dyn Error>> {
         Ok(())
     }
 
@@ -235,6 +72,76 @@ impl Server {
         tokio::spawn(client.start());
     }
 
+    fn swarm_message(&mut self, peer_id: libp2p::PeerId, message: swarm::Message) -> Result<(), Box<dyn Error>> {
+        match message {
+            swarm::Message::Request {request_id, request, channel} => {
+                self.swarm_request(peer_id, request_id, request, channel)
+            },
+            swarm::Message::Response {request_id, response} => {
+                self.swarm_response(peer_id, request_id, response)
+            },
+        }
+    }
+
+    fn swarm_request(
+        &mut self,
+        peer: libp2p::PeerId,
+        _request_id: InboundRequestId,
+        request: swarm::Request,
+        channel: ResponseChannel<swarm::Response>,
+    ) -> Result<(), Box<dyn Error>> {
+        // Can't store u64 timestamp directly in sqlite, would have to store as blob
+        let received: i64 = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs().try_into()?;
+        let tx = self.store.transaction()?;
+        let peer_id = tx.get_or_put_peer(&peer.to_base58())?;
+        match request {
+            swarm::Request::Invite {
+                app_instance_uuid,
+                app_id,
+                app_version
+            } => {
+                let app = tx.get_or_put_app(&app_id)?;
+                let version = tx.get_or_put_app_version(app, &app_version)?;
+                let instance = tx.get_or_put_app_instance(peer_id, version, &app_instance_uuid)?;
+                tx.get_or_put_message_invite(received, instance)?;
+            },
+            swarm::Request::Message {
+                from_app_instance_uuid,
+                to_app_instance_uuid,
+                message,
+            } => {
+                let local_peer_id = tx.get_peer(&self.peer_id.to_base58())?.ok_or("Cannot find local peer ID in database")?;
+                let from = tx.get_app_instance(peer_id, &from_app_instance_uuid)?.ok_or("Cannot find 'from' app instance in database")?;
+                let to = tx.get_app_instance(local_peer_id, &to_app_instance_uuid)?.ok_or("Cannot find 'to' app instance in database")?;
+                let message_id = tx.get_or_put_message_data(&message)?;
+                tx.put_message_inbox(received, from, to, message_id)?;
+            },
+        }
+        let _ = self.swarm.behaviour_mut().request_response.send_response(
+            channel,
+            swarm::Response::Acknowledge,
+        );
+        Ok(tx.commit()?)
+    }
+
+    fn swarm_response(
+        &mut self,
+        _peer: libp2p::PeerId,
+        request_id: OutboundRequestId,
+        response: swarm::Response,
+    ) -> Result<(), Box<dyn Error>> {
+        let tx = self.store.transaction()?;
+        match response {
+            swarm::Response::Acknowledge => {
+                if let Some(outbox_id) = self.delivery_attempts.remove(&request_id) {
+                    tx.delete_message_outbox(outbox_id)?;
+                    // TODO: attempt to deliver next message for peer
+                }
+            }
+        }
+        Ok(tx.commit()?)
+    }
+
     async fn swarm_event(&mut self, event: SwarmEvent<MutinyBehaviourEvent>) -> Result<(), Box<dyn Error>> {
         match event {
             SwarmEvent::Behaviour(swarm::MutinyBehaviourEvent::Mdns(ev)) => match ev {
@@ -253,9 +160,7 @@ impl Server {
             },
             SwarmEvent::Behaviour(swarm::MutinyBehaviourEvent::RequestResponse(ev)) => match ev {
                 request_response::Event::Message {peer, message} => {
-                    match message {
-                        Request
-                    }
+                    self.swarm_message(peer, message)?;
                 },
                 _ => {},
                 // request_response::Event::OutboundFailure {peer, request_id, error} => {
@@ -286,23 +191,90 @@ impl Server {
         Ok(())
     }
 
-    async fn client_request(&self, request: ClientRequest) -> Result<(), Box<dyn Error>> {
+    async fn client_request(&mut self, request: ClientRequest) -> Result<(), Box<dyn Error>> {
         // ignore response failures, it means the client is gone
         let _ = request.response.send(self.handle_request(request.request).await?);
         Ok(())
     }
 
-    async fn handle_request(&self, request: Request) -> Result<Response, Box<dyn Error>> {
+    fn create_app_instance(&mut self, label: &str, manifest: &Manifest) -> Result<String, Box<dyn Error>> {
+        let tx = self.store.transaction()?;
+        let uuid = Store::generate_app_instance_uuid();
+        let app_id = tx.get_or_put_app(&manifest.id)?;
+        let app_version_id = tx.get_or_put_app_version(app_id, &manifest.version)?;
+        let peer_id = tx.get_or_put_peer(&self.peer_id.to_base58())?;
+        let app_instance_id = tx.get_or_put_app_instance(
+            peer_id,
+            app_version_id,
+            &uuid,
+        )?;
+        tx.put_app_instance_label(app_instance_id, label)?;
+        tx.commit()?;
+        Ok(uuid)
+    }
+
+    fn get_app_instance_uuid(&mut self, label: &str) -> Result<Option<String>, Box<dyn Error>> {
+        let tx = self.store.transaction()?;
+        if let Some(app_instance_id) = tx.get_app_instance_by_label(label)? {
+            return Ok(tx.get_app_instance_uuid(app_instance_id)?)
+        }
+        Ok(None)
+    }
+
+    fn send_message_invite(&mut self, to_peer: &str, uuid: String) -> Result<(), Box<dyn Error>> {
+        let peer: PeerId = to_peer.parse()?;
+        let tx = self.store.transaction()?;
+        let (app_id, app_version) = tx.get_app_id_and_version(&self.peer_id.to_base58(), &uuid)?.ok_or("Cannot find app id and version in database")?;
+        self.swarm.behaviour_mut().request_response.send_request(&peer, swarm::Request::Invite {
+            app_instance_uuid: uuid,
+            app_id,
+            app_version,
+        });
+        Ok(())
+    }
+
+    fn send_message(&mut self, to_peer: String, to_uuid: String, from_uuid: String, message: Vec<u8>) -> Result<(), Box<dyn Error>> {
+        let tx = self.store.transaction()?;
+        let queued: i64 = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs().try_into()?;
+        let message_id = tx.get_or_put_message_data(&message)?;
+        let from_peer_id = tx.get_or_put_peer(&self.peer_id.to_base58())?;
+        let to_peer_id = tx.get_or_put_peer(&to_peer)?;
+        let from = tx.get_app_instance(from_peer_id, &from_uuid)?.ok_or("Cannot find 'from' app instance in database")?;
+        let to = tx.get_app_instance(to_peer_id, &to_uuid)?.ok_or("Cannot find 'to' app instance in database")?;
+        tx.put_message_outbox(queued, from, to, message_id)?;
+        let peer: PeerId = to_peer.parse()?;
+        self.swarm.behaviour_mut().request_response.send_request(&peer, swarm::Request::Message {
+            to_app_instance_uuid: to_uuid,
+            from_app_instance_uuid: from_uuid,
+            message,
+        });
+        Ok(tx.commit()?)
+    }
+
+    fn read_message(&mut self, uuid: String) -> Result<Option<Message>, Box<dyn Error>> {
+        let tx = self.store.transaction()?;
+        let local_peer_id = tx.get_peer(&self.peer_id.to_base58())?.ok_or("Cannot find local peer ID in database")?;
+        let app_instance_id = tx.get_app_instance(local_peer_id, &uuid)?.ok_or("Cannot find 'to' app instance in database")?;
+        Ok(tx.read_message(app_instance_id)?)
+    }
+
+    fn next_message(&mut self, uuid: String) -> Result<(), Box<dyn Error>> {
+        let tx = self.store.transaction()?;
+        let local_peer_id = tx.get_peer(&self.peer_id.to_base58())?.ok_or("Cannot find local peer ID in database")?;
+        let app_instance_id = tx.get_app_instance(local_peer_id, &uuid)?.ok_or("Cannot find 'to' app instance in database")?;
+        Ok(tx.next_message(app_instance_id)?)
+    }
+
+    async fn handle_request(&mut self, request: Request) -> Result<Response, Box<dyn Error>> {
         match request {
-            Request::Ping => Ok(Response::Pong),
-            Request::CreateAppInstance {name, manifest} => {
-                match self.create_application_instance(&name, &manifest) {
+            Request::CreateAppInstance {label, manifest} => {
+                match self.create_app_instance(&label, &manifest) {
                     Ok(uuid) => Ok(Response::CreateAppInstance(uuid)),
                     Err(err) => Ok(Response::Error(format!("{}", err))),
                 }
             },
-            Request::AppInstanceUuid(name) => {
-                match self.get_application_instance_uuid(&name) {
+            Request::AppInstanceUuid(label) => {
+                match self.get_app_instance_uuid(&label) {
                     Ok(uuid) => Ok(Response::AppInstanceUuid(uuid)),
                     Err(err) => Ok(Response::Error(format!("{}", err))),
                 }
@@ -311,15 +283,28 @@ impl Server {
                 self.swarm.local_peer_id().to_base58()
             )),
             Request::Peers => {
-                let mut peers: Vec<Peer> = Vec::new();
-                for (id, addr) in self.peers.iter() {
-                    peers.push(Peer {
-                        id: id.to_base58(),
-                        addr: addr.to_string(),
-                    });
+                let mut peers: Vec<String> = Vec::new();
+                for (id, _addr) in self.peers.iter() {
+                    peers.push(id.to_base58());
                 }
                 Ok(Response::Peers(peers))
             },
+            Request::MessageInvite {peer, app_instance_uuid} => {
+                self.send_message_invite(&peer, app_instance_uuid)?;
+                Ok(Response::Success)
+            },
+            Request::MessageSend {peer, app_instance_uuid, from_app_instance_uuid, message} => {
+                self.send_message(peer, app_instance_uuid, from_app_instance_uuid, message)?;
+                Ok(Response::Success)
+            },
+            Request::ReadMessage(uuid) => {
+                let message = self.read_message(uuid)?;
+                Ok(Response::Message(message))
+            },
+            Request::NextMessage(uuid) => {
+                self.next_message(uuid)?;
+                Ok(Response::Success)
+            }
         }
     }
 }
