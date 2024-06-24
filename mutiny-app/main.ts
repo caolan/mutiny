@@ -1,4 +1,4 @@
-import { connect, defaultSocketPath, MutinyClient } from "../lib/client.ts";
+import { connect, defaultSocketPath, MutinyClient, Message } from "../lib/client.ts";
 import { readManifest } from "../lib/manifest.ts";
 import { serveDir } from "@std/http";
 import { join } from "@std/path";
@@ -21,14 +21,38 @@ class Server {
     async serveAPI(request: Request) {
         const url = new URL(request.url);
         const pathname = url.pathname;
-        if (pathname === '/_api/v1/ping') {
-            return new Response(await this.client.ping());
-        } else if (pathname === '/_api/v1/application_instance') {
+        if (pathname === '/_api/v1/application_instance') {
             return new Response(JSON.stringify(this.instance));
         } else if (pathname === '/_api/v1/local_peer_id') {
             return new Response(await this.client.localPeerId());
         } else if (pathname === '/_api/v1/peers') {
             return new Response(JSON.stringify(await this.client.peers()));
+        } else if (request.method === 'POST' && pathname === '/_api/v1/message_invite') {
+            const data = await request.json();
+            return new Response(JSON.stringify(await this.client.messageInvite(
+                data.peer,
+                this.instance.uuid,
+            )));
+        } else if (request.method === 'POST' && pathname === '/_api/v1/message_send') {
+            const data = await request.json();
+            const message = new TextEncoder().encode(data.message);
+            return new Response(JSON.stringify(await this.client.messageSend(
+                data.peer,
+                data.app_instance_uuid,
+                this.instance.uuid,
+                message,
+            )));
+        } else if (pathname === '/_api/v1/message_invites') {
+            return new Response(JSON.stringify(await this.client.messageInvites()));
+        } else if (pathname === '/_api/v1/message_read') {
+            const m = await this.client.messageRead(this.instance.uuid) as Message;
+            return new Response(JSON.stringify(m && {
+                peer: m.peer,
+                uuid: m.uuid,
+                message: new TextDecoder().decode(m.message),
+            }));
+        } else if (request.method === 'POST' && pathname === '/_api/v1/message_next') {
+            return new Response(JSON.stringify(await this.client.messageNext(this.instance.uuid)));
         } else {
             return new Response(`API response for ${pathname}`);
         }
