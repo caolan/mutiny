@@ -47,3 +47,25 @@ And open the displayed URL in your browser. You should see your local peer
 ID at the top of the page and a (potentially empty) list of discovered
 peers below. Repeating this process on another machine on your local
 network will hopefully add a discovered peer to the list.
+
+### Chat
+
+Demonstrates peer-to-peer message delivery on the local network.
+
+First, start the mutinyd daemon:
+
+```
+cd mutinyd
+cargo run
+```
+
+Then, serve the app:
+
+```
+./mutiny-app/mutiny-app examples/chat
+```
+
+And open the displayed URL in your browser. Repeat this process on another
+machine on your local network and it will hopefully add a discovered
+peer to the list on the left. Click on the peer to type messages to
+each another.
