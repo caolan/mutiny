@@ -1,5 +1,6 @@
 // State
 let local_peer_id = null;
+let local_app_uuid = null;
 let peers = new Set();
 let prev_invites = "";
 let selected_invite = null;
@@ -26,6 +27,10 @@ async function updateLocalPeerId() {
     local_peer_id = await fetch("/_api/v1/local_peer_id").then(res => res.text());
     document.getElementById('local-peer-id').textContent = 'You: ' + local_peer_id;
     renderMessages();
+}
+
+async function updateLocalAppInstance() {
+    local_app_uuid = await fetch("/_api/v1/application_instance").then(res => res.json()).uuid;
 }
 
 function renderInvite(invite) {
@@ -84,8 +89,16 @@ function renderMessages() {
     let txt = "";
     if (selected_invite) {
         for (const msg of messages) {
-            if (msg.from === selected_invite.peer || msg.to === selected_invite.peer) {
-                const from = msg.from === local_peer_id ? 'You' : msg.from;
+            const match_from = (
+                msg.from.peer === selected_invite.peer &&
+                msg.from.app_instance_uuid === selected_invite.app_instance_uuid
+            );
+            const match_to = (
+                msg.to.peer === selected_invite.peer &&
+                msg.to.app_instance_uuid === selected_invite.app_instance_uuid
+            );
+            if (match_from || match_to) {
+                const from = msg.from.peer === local_peer_id ? 'You' : msg.from.peer;
                 txt += `<${from}>: ${msg.message}\n`;
             }
         }
@@ -98,13 +111,17 @@ async function getMessages() {
         const res = await fetch("/_api/v1/message_read");
         const data = await res.json();
         if (data) {
-            messages.push({
-                from: data.peer,
-                to: local_peer_id,
-                message: data.message,
-            });
+            console.log(data);
+            const from = {
+                peer: data.peer,
+                app_instance_uuid: data.uuid,
+            };
+            const to = {
+                peer: local_peer_id,
+                app_instance_uuid: local_app_uuid,
+            };
+            appendMessage(from, to, data.message);
             await fetch("/_api/v1/message_next", {method: "POST"});
-            renderMessages();
         } else {
             // Check again in 1 second
             setTimeout(getMessages, 1000);
@@ -114,6 +131,7 @@ async function getMessages() {
 }
 
 function appendMessage(from, to, message) {
+    console.log('appendMessage', from, to, message);
     messages.push({from, to, message});
     renderMessages();
 }
@@ -134,7 +152,15 @@ form.addEventListener('submit', async ev => {
             })
         });
         input.value = "";
-        appendMessage(local_peer_id, selected_invite.peer, message);
+        const from = {
+            peer: local_peer_id,
+            app_instance_uuid: local_app_uuid,
+        };
+        const to = {
+            peer: selected_invite.peer,
+            app_instance_uuid: selected_invite.app_instance_uuid,
+        };
+        appendMessage(from, to, message);
     }
 });
 
@@ -151,6 +177,7 @@ delegate(document.body, "click", "#peers li", function () {
 
 // Initialize example app
 await updateLocalPeerId();
+await updateLocalAppInstance();
 await updatePeers();
 await updateInvites();
 
