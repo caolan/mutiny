@@ -267,7 +267,8 @@ impl Server {
         let tx = self.store.transaction()?;
         let local_peer_id = tx.get_peer(&self.peer_id.to_base58())?.ok_or("Cannot find local peer ID in database")?;
         let app_instance_id = tx.get_app_instance(local_peer_id, &uuid)?.ok_or("Cannot find 'to' app instance in database")?;
-        Ok(tx.next_message(app_instance_id)?)
+        tx.next_message(app_instance_id)?;
+        Ok(tx.commit()?)
     }
 
     async fn handle_request(&mut self, request: Request) -> Result<Response, Box<dyn Error>> {

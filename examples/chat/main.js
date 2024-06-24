@@ -97,13 +97,14 @@ async function getMessages() {
     while (true) {
         const res = await fetch("/_api/v1/message_read");
         const data = await res.json();
-        if (data.message) {
+        if (data) {
             messages.push({
-                from: data.message.peer,
+                from: data.peer,
                 to: local_peer_id,
-                message: data.message.message,
+                message: data.message,
             });
             await fetch("/_api/v1/message_next", {method: "POST"});
+            renderMessages();
         } else {
             // Check again in 1 second
             setTimeout(getMessages, 1000);
@@ -156,6 +157,6 @@ await updateInvites();
 // Start polling for messages
 getMessages();
 
-// Poll server for new peers
-// setInterval(updatePeers, 2000);
-// setInterval(updateInvites, 2000);
+// Poll server for new peers and invites
+setInterval(updatePeers, 2000);
+setInterval(updateInvites, 2000);

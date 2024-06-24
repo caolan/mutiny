@@ -48,13 +48,13 @@ export async function connect({socket_path}: ConnectOptions): Promise<MutinyClie
     return new MutinyClient(conn);
 }
 
-type Message = {
+export type Message = {
     peer: string,
     uuid: string,
     message: Uint8Array,
 };
 
-type MessageInvite = {
+export type MessageInvite = {
     peer: string, 
     app_instance_uuid: string,
     manifest_id: string,
@@ -110,7 +110,7 @@ export class MutinyClient {
                 let length_buf = new ArrayBuffer(4);
 
                 // send request
-                console.log("Sending", request);
+                // console.log("Sending", request);
                 const encoded = msgpack.encode(request);
                 new DataView(length_buf).setUint32(0, encoded.byteLength, false);
                 await writeAll(this.conn, new Uint8Array(length_buf, 0));
@@ -128,7 +128,7 @@ export class MutinyClient {
                 const response = msgpack.decode(
                     new Uint8Array(response_buf)
                 ) as MutinyResponse;
-                console.log("Received", response);
+                // console.log("Received", response);
                 if (response.type === 'Error') {
                     return reject(new Error(response.message))
                 };
