@@ -40,7 +40,7 @@ cargo run
 Then, serve the app:
 
 ```
-./mutiny-app/mutiny-app examples/ping
+./mutiny-app/mutiny-app ping examples/ping
 ```
 
 And open the displayed URL in your browser. You should see your local peer
@@ -62,7 +62,7 @@ cargo run
 Then, serve the app:
 
 ```
-./mutiny-app/mutiny-app examples/chat
+./mutiny-app/mutiny-app chat examples/chat
 ```
 
 And open the displayed URL in your browser. Repeat this process on another
