@@ -192,8 +192,12 @@ impl Server {
     }
 
     async fn client_request(&mut self, request: ClientRequest) -> Result<(), Box<dyn Error>> {
+        let response = match self.handle_request(request.request).await {
+            Ok(response) => response,
+            Err(err) => Response::Error {message: format!("{}", err)},
+        };
         // ignore response failures, it means the client is gone
-        let _ = request.response.send(self.handle_request(request.request).await?);
+        let _ = request.response.send(response);
         Ok(())
     }
 
@@ -269,25 +273,31 @@ impl Server {
         match request {
             Request::CreateAppInstance {label, manifest} => {
                 match self.create_app_instance(&label, &manifest) {
-                    Ok(uuid) => Ok(Response::CreateAppInstance(uuid)),
-                    Err(err) => Ok(Response::Error(format!("{}", err))),
+                    Ok(uuid) => Ok(Response::CreateAppInstance {uuid}),
+                    Err(err) => Ok(Response::Error {message: format!("{}", err)}),
                 }
             },
-            Request::AppInstanceUuid(label) => {
+            Request::AppInstanceUuid {label} => {
                 match self.get_app_instance_uuid(&label) {
-                    Ok(uuid) => Ok(Response::AppInstanceUuid(uuid)),
-                    Err(err) => Ok(Response::Error(format!("{}", err))),
+                    Ok(uuid) => Ok(Response::AppInstanceUuid {uuid}),
+                    Err(err) => Ok(Response::Error {message: format!("{}", err)}),
                 }
             },
-            Request::LocalPeerId => Ok(Response::LocalPeerId(
-                self.swarm.local_peer_id().to_base58()
-            )),
+            Request::LocalPeerId => Ok(Response::LocalPeerId {
+                peer_id: self.swarm.local_peer_id().to_base58()
+            }),
             Request::Peers => {
                 let mut peers: Vec<String> = Vec::new();
                 for (id, _addr) in self.peers.iter() {
                     peers.push(id.to_base58());
                 }
-                Ok(Response::Peers(peers))
+                Ok(Response::Peers {peers})
+            },
+            Request::MessageInvites => {
+                let tx = self.store.transaction()?;
+                Ok(Response::MessageInvites {
+                    invites: tx.list_message_invites()?,
+                })
             },
             Request::MessageInvite {peer, app_instance_uuid} => {
                 self.send_message_invite(&peer, app_instance_uuid)?;
@@ -297,12 +307,12 @@ impl Server {
                 self.send_message(peer, app_instance_uuid, from_app_instance_uuid, message)?;
                 Ok(Response::Success)
             },
-            Request::ReadMessage(uuid) => {
-                let message = self.read_message(uuid)?;
-                Ok(Response::Message(message))
+            Request::ReadMessage {app_instance_uuid} => {
+                let message = self.read_message(app_instance_uuid)?;
+                Ok(Response::Message {message})
             },
-            Request::NextMessage(uuid) => {
-                self.next_message(uuid)?;
+            Request::NextMessage {app_instance_uuid} => {
+                self.next_message(app_instance_uuid)?;
                 Ok(Response::Success)
             }
         }

@@ -6,13 +6,16 @@ pub struct Manifest {
     pub version: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
+#[serde(tag="type")]
 pub enum Request {
     CreateAppInstance {
         label: String,
         manifest: Manifest
     },
-    AppInstanceUuid(String),
+    AppInstanceUuid {
+        label: String,
+    },
     LocalPeerId,
     Peers,
     MessageInvite {
@@ -25,24 +28,40 @@ pub enum Request {
         from_app_instance_uuid: String,
         message: Vec<u8>,
     },
-    ReadMessage(String),
-    NextMessage(String),
-    // Invites,
+    ReadMessage {
+        app_instance_uuid: String,
+    },
+    NextMessage {
+        app_instance_uuid: String,
+    },
+    MessageInvites,
 }
 
 #[derive(Serialize, Debug)]
+#[serde(tag="type")]
 pub enum Response {
     Success,
-    Error(String),
-    CreateAppInstance(String),
-    AppInstanceUuid(Option<String>),
-    LocalPeerId(String),
-    Peers(Vec<String>),
-    Message(Option<Message>),
-    // Invites {
-    //     peer: String,
-    //     app_instance_uuid: String,
-    // },
+    Error {
+        message: String,
+    },
+    CreateAppInstance {
+        uuid: String
+    },
+    AppInstanceUuid {
+        uuid: Option<String>,
+    },
+    LocalPeerId {
+        peer_id: String
+    },
+    Peers {
+        peers: Vec<String>,
+    },
+    Message {
+        message: Option<Message>,
+    },
+    MessageInvites {
+        invites: Vec<MessageInvite>
+    },
 }
 
 #[derive(Serialize, Debug)]
@@ -50,4 +69,12 @@ pub struct Message {
     pub peer: String,
     pub uuid: String,
     pub message: Vec<u8>,
+}
+
+#[derive(Serialize, Debug)]
+pub struct MessageInvite {
+    pub peer: String,
+    pub app_instance_uuid: String,
+    pub manifest_id: String,
+    pub manifest_version: String,
 }

@@ -54,90 +54,135 @@ type Message = {
     message: Uint8Array,
 };
 
-type MutinyRequest = {LocalPeerId: null}
-    | {Peers: null}
-    | {Invites: null}
-    | {AppInstanceUuid: string}
-    | {CreateAppInstance: {label: string, manifest: Manifest}}
-    | {MessageInvite: {peer: string, app_instance_uuid: string}}
-    | {MessageSend: {
+type MessageInvite = {
+    peer: string, 
+    app_instance_uuid: string,
+    manifest_id: string,
+    manifest_version: string,
+};
+
+type MutinyRequest = {type: "LocalPeerId"}
+    | {type: "Peers"}
+    | {type: "Invites"}
+    | {type: "AppInstanceUuid", label: string}
+    | {type: "CreateAppInstance", label: string, manifest: Manifest}
+    | {type: "MessageInvite", peer: string, app_instance_uuid: string}
+    | {type: "MessageInvites"}
+    | {
+        type: "MessageSend", 
         peer: string,
         app_instance_uuid: string,
         from_app_instance_uuid: string,
-        message: Uint8Array}}
-    | {ReadMessage: string}
-    | {NextMessage: string};
+        message: Uint8Array,
+    }
+    | {type: "ReadMessage", app_instance_uuid: string}
+    | {type: "NextMessage", app_instance_uuid: string}
+    ;
 
-type MutinyResponse = {Success: null} 
-    | {Error: string}
-    | {LocalPeerId: string}
-    | {Peers: string[]}
-    | {AppInstanceUuid: string | null}
-    | {CreateAppInstance: string}
-    | {Message: null | Message};
-    // | {Invites: {peer: string, app_instance_uuid: string}[]};
+type MutinyResponse = {type: "Success"} 
+    | {type: "Error", message: string}
+    | {type: "LocalPeerId", peer_id: string}
+    | {type: "Peers", peers: string[]}
+    | {type: "AppInstanceUuid", uuid: string | null}
+    | {type: "CreateAppInstance", uuid: string}
+    | {type: "Message", message: null | Message}
+    | {type: "MessageInvites",  invites: MessageInvite[]}
+    ;
 
 export class MutinyClient {
+    private processing = false;
+    private queue: {
+        request: MutinyRequest, 
+        resolve: (response: MutinyResponse) => void,
+        reject: (err: Error) => void,
+    }[] = [];
+
     constructor(
         private conn: Deno.UnixConn,
     ) {}
 
-    private async request(request: MutinyRequest): Promise<MutinyResponse> {
-        // reused for both request and response
-        let length_buf = new ArrayBuffer(4);
+    private async processQueue() {
+        while (this.queue.length > 0) {
+            const items = this.queue;
+            this.queue = [];
+            for (const {request, resolve, reject} of items) {
+                // reused for both request and response
+                let length_buf = new ArrayBuffer(4);
 
-        // send request
-        console.log("Sending", request);
-        const encoded = msgpack.encode(request);
-        new DataView(length_buf).setUint32(0, encoded.byteLength, false);
-        await writeAll(this.conn, new Uint8Array(length_buf, 0));
-        await writeAll(this.conn, encoded);
+                // send request
+                console.log("Sending", request);
+                const encoded = msgpack.encode(request);
+                new DataView(length_buf).setUint32(0, encoded.byteLength, false);
+                await writeAll(this.conn, new Uint8Array(length_buf, 0));
+                await writeAll(this.conn, encoded);
 
-        // read response
-        const reader = this.conn.readable.getReader({mode: "byob"});
-        length_buf = await readFullBuffer(reader, length_buf);
-        const response_len = new DataView(length_buf).getUint32(0, false);
-        const response_buf = await readFullBuffer(
-            reader,
-            new ArrayBuffer(response_len),
-        );
-        reader.releaseLock();
-        const response = msgpack.decode(
-            new Uint8Array(response_buf)
-        ) as MutinyResponse;
-        console.log("Received", response);
-        if ('Error' in response) throw new Error(response.Error);
-        return response;
+                // read response
+                const reader = this.conn.readable.getReader({mode: "byob"});
+                length_buf = await readFullBuffer(reader, length_buf);
+                const response_len = new DataView(length_buf).getUint32(0, false);
+                const response_buf = await readFullBuffer(
+                    reader,
+                    new ArrayBuffer(response_len),
+                );
+                reader.releaseLock();
+                const response = msgpack.decode(
+                    new Uint8Array(response_buf)
+                ) as MutinyResponse;
+                console.log("Received", response);
+                if (response.type === 'Error') {
+                    return reject(new Error(response.message))
+                };
+                resolve(response);
+            }
+        }
+        this.processing = false;
+    }
+
+    private request(request: MutinyRequest): Promise<MutinyResponse> {
+        const promise = new Promise((resolve, reject) => {
+            this.queue.push({request, resolve, reject});
+        }) as Promise<MutinyResponse>;
+        if (!this.processing) {
+            this.processing = true;
+            queueMicrotask(() => this.processQueue());
+        }
+        return promise;
     }
 
     async localPeerId(): Promise<string> {
-        const response = await this.request({LocalPeerId: null});
-        assert('LocalPeerId' in response);
-        return response.LocalPeerId;
+        const response = await this.request({type: "LocalPeerId"});
+        assert(response.type === 'LocalPeerId');
+        return response.peer_id;
     }
 
     async peers(): Promise<string[]> {
-        const response = await this.request({Peers: null});
-        assert('Peers' in response);
-        return response.Peers;
+        const response = await this.request({type: "Peers"});
+        assert(response.type === 'Peers');
+        return response.peers;
     }
 
     async appInstanceUuid(label: string): Promise<string | null> {
-        const response = await this.request({AppInstanceUuid: name});
-        assert('AppInstanceUuid' in response);
-        return response.AppInstanceUuid;
+        const response = await this.request({type: "AppInstanceUuid", label});
+        assert(response.type === 'AppInstanceUuid');
+        return response.uuid;
     }
 
     async createAppInstance(label: string, manifest: Manifest): Promise<string> {
-        const response = await this.request({CreateAppInstance: {label, manifest}});
-        assert('CreateAppInstance' in response);
-        return response.CreateAppInstance;
+        const response = await this.request({type: "CreateAppInstance", label, manifest});
+        assert(response.type === 'CreateAppInstance');
+        return response.uuid;
     }
 
     async messageInvite(peer: string, app_instance_uuid: string): Promise<void> {
-        const response = await this.request({MessageInvite: {peer, app_instance_uuid}});
-        assert('Success' in response);
+        const response = await this.request({type: "MessageInvite", peer, app_instance_uuid});
+        assert(response.type === 'Success');
         return;
+    }
+
+    async messageInvites(): Promise<MessageInvite[]> {
+        const response = await this.request({type: "MessageInvites"});
+        assert(response.type === 'MessageInvites');
+        return response.invites;
     }
 
     async messageSend(
@@ -146,31 +191,32 @@ export class MutinyClient {
         from_app_instance_uuid: string,
         message: Uint8Array
     ): Promise<void> {
-        const response = await this.request({MessageSend: {
+        const response = await this.request({
+            type: "MessageSend", 
             peer, 
             app_instance_uuid,
             from_app_instance_uuid,
-            message
-        }});
-        assert('Success' in response);
+            message,
+        });
+        assert(response.type === 'Success');
         return;
     }
 
     async readMessage(app_instance_uuid: string): Promise<Message | null> {
-        const response = await this.request({ReadMessage: app_instance_uuid});
-        assert('Message' in response);
-        return response.Message;
+        const response = await this.request({type: "ReadMessage", app_instance_uuid});
+        assert(response.type === 'Message');
+        return response.message;
     }
 
     async nextMessage(app_instance_uuid: string): Promise<void> {
-        const response = await this.request({NextMessage: app_instance_uuid});
-        assert('Success' in response);
+        const response = await this.request({type: "NextMessage", app_instance_uuid});
+        assert(response.type === 'Success');
         return;
     }
 
     // async invites(): Promise<{id: string, addr: string}[]> {
-    //     const response = await this.request({Invites: null});
-    //     assert('Invites' in response);
-    //     return response.Invites;
+    //     const response = await this.request({type: "Invites"});
+    //     assert(response.type === 'Invites');
+    //     return response.invites;
     // }
 }

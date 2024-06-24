@@ -1,7 +1,7 @@
 use rusqlite::{self, params, Connection, Result, Transaction, OptionalExtension};
 use uuid::Uuid;
 
-use crate::protocol::Message;
+use crate::protocol::{Message, MessageInvite};
 
 pub struct Store {
     db: Connection,
@@ -76,7 +76,7 @@ impl<'a> StoreTransaction<'a> {
                          CREATE TABLE message_invite (
                              id INTEGER PRIMARY KEY,
                              received INTEGER NOT NULL,
-                             app_instance_id INTEGER REFERENCES app_instance(id) NOT NULL
+                             app_instance_id REFERENCES app_instance(id) NOT NULL
                          );
                          CREATE TABLE message_allow (
                              id INTEGER PRIMARY KEY,
@@ -335,6 +335,27 @@ impl<'a> StoreTransaction<'a> {
         stmt.query_row([app_instance_id], |row| row.get::<_, i64>(0)).optional()
     }
 
+    pub fn list_message_invites(&self) -> Result<Vec<MessageInvite>> {
+        let mut stmt = self.tx.prepare_cached(
+            "SELECT peer_id, uuid, manifest_id, manifest_version
+             FROM message_invite
+             JOIN app_instance ON app_instance.id = app_instance_id
+             JOIN app_version ON app_version.id = app_version_id
+             JOIN app ON app.id = app_id",
+        )?;
+        let mut rows = stmt.query([])?;
+        let mut results = Vec::new();
+        while let Some(row) = rows.next()? {
+            results.push(MessageInvite {
+                peer: row.get(0)?,
+                app_instance_uuid: row.get(1)?,
+                manifest_id: row.get(2)?,
+                manifest_version: row.get(3)?,
+            });
+        }
+        return Ok(results);
+    }
+
     pub fn put_message_invite(&self, received: i64, app_instance_id: i64) -> Result<i64> {
         let mut stmt = self.tx.prepare_cached(
             "INSERT INTO message_invite (received, app_instance_id)
@@ -353,9 +374,12 @@ impl<'a> StoreTransaction<'a> {
 
     pub fn get_app_id_and_version(&self, peer: &str, uuid: &str) -> Result<Option<(String, String)>> {
         let mut stmt = self.tx.prepare_cached(
-            "SELECT app.id, app_version.version
+            "SELECT manifest_id, manifest_version
              FROM app_instance
-             WHERE peer = ?1 AND uuid = ?2",
+             JOIN app_version ON app_version.id = app_version_id
+             JOIN app ON app.id = app_version.app_id
+             JOIN peer ON peer.id = app_instance.peer_id
+             WHERE peer.peer_id = ?1 AND uuid = ?2",
         )?;
         stmt.query_row(
             [&peer, &uuid],
