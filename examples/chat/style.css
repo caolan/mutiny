@@ -1,0 +1,99 @@
+body {
+    font-family: sans-serif;
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    background: #222;
+    color: white;
+    padding: 0.5em 1em;
+}
+
+h1 {
+    font-size: 100%;
+    font-weight: bold;
+    margin: 0;
+    padding: 0;
+}
+
+main {
+    display: flex;
+    flex-grow: 1;
+}
+
+#peers, #messages {
+    padding: 0;
+    margin: 0;
+    box-sizing: border-box;
+    min-height: 100%;
+}
+
+#peers {
+    padding: 1em;
+    border-right: 1px solid #ccc;
+    width: 20%;
+    min-width: 200px;
+}
+
+#peers ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+#peers li {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 0;
+    padding: 0.5em;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+#peers .active {
+    background: #ccf;
+}
+
+#messages {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+#message-history {
+    flex-grow: 1;
+    flex-shrink: 1;
+    padding: 1em;
+}
+
+#send-message-form {
+    flex-grow: 0;
+    flex-shrink: 0;
+    padding: 1em;
+    border-top: 1px solid #ccc;
+    background: #eee;
+    display: flex;
+    gap: 0.5em;
+    display: none;
+}
+
+#send-message-form input[name=message] {
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+#send-message-form button {
+    flex-grow: 0;
+    flex-shrink: 0;
+}
+
+#peers li::before {
+    content: '👤 ';
+}
