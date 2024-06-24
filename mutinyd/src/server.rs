@@ -245,13 +245,14 @@ impl Server {
         let to_peer_id = tx.get_or_put_peer(&to_peer)?;
         let from = tx.get_app_instance(from_peer_id, &from_uuid)?.ok_or("Cannot find 'from' app instance in database")?;
         let to = tx.get_app_instance(to_peer_id, &to_uuid)?.ok_or("Cannot find 'to' app instance in database")?;
-        tx.put_message_outbox(queued, from, to, message_id)?;
+        let outbox_id = tx.put_message_outbox(queued, from, to, message_id)?;
         let peer: PeerId = to_peer.parse()?;
-        self.swarm.behaviour_mut().request_response.send_request(&peer, swarm::Request::Message {
+        let request_id = self.swarm.behaviour_mut().request_response.send_request(&peer, swarm::Request::Message {
             to_app_instance_uuid: to_uuid,
             from_app_instance_uuid: from_uuid,
             message,
         });
+        self.delivery_attempts.insert(request_id, outbox_id);
         Ok(tx.commit()?)
     }
 
@@ -307,11 +308,11 @@ impl Server {
                 self.send_message(peer, app_instance_uuid, from_app_instance_uuid, message)?;
                 Ok(Response::Success)
             },
-            Request::ReadMessage {app_instance_uuid} => {
+            Request::MessageRead {app_instance_uuid} => {
                 let message = self.read_message(app_instance_uuid)?;
                 Ok(Response::Message {message})
             },
-            Request::NextMessage {app_instance_uuid} => {
+            Request::MessageNext {app_instance_uuid} => {
                 self.next_message(app_instance_uuid)?;
                 Ok(Response::Success)
             }

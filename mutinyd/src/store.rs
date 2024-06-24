@@ -337,11 +337,12 @@ impl<'a> StoreTransaction<'a> {
 
     pub fn list_message_invites(&self) -> Result<Vec<MessageInvite>> {
         let mut stmt = self.tx.prepare_cached(
-            "SELECT peer_id, uuid, manifest_id, manifest_version
+            "SELECT peer.peer_id, uuid, manifest_id, manifest_version
              FROM message_invite
              JOIN app_instance ON app_instance.id = app_instance_id
              JOIN app_version ON app_version.id = app_version_id
-             JOIN app ON app.id = app_id",
+             JOIN app ON app.id = app_id
+             JOIN peer ON peer.id = app_instance.peer_id",
         )?;
         let mut rows = stmt.query([])?;
         let mut results = Vec::new();

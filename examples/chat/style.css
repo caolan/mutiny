@@ -28,15 +28,17 @@ main {
 }
 
 #peers, #messages {
-    padding: 1em;
+    padding: 0;
     margin: 0;
     box-sizing: border-box;
     min-height: 100%;
 }
 
 #peers {
+    padding: 1em;
     border-right: 1px solid #ccc;
     width: 20%;
+    min-width: 200px;
 }
 
 #peers ul {
@@ -54,19 +56,44 @@ main {
     white-space: nowrap;
 }
 
-#peers li::before {
-    content: '👤 ';
-}
-
 #peers .active {
     background: #ccf;
 }
 
-#mesages {
-    width: 80%;
+#messages {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    flex-shrink: 1;
 }
 
-h2 {
-    font-size: 120%;
-    font-weight: bold;
+#message-history {
+    flex-grow: 1;
+    flex-shrink: 1;
+    padding: 1em;
+}
+
+#send-message-form {
+    flex-grow: 0;
+    flex-shrink: 0;
+    padding: 1em;
+    border-top: 1px solid #ccc;
+    background: #eee;
+    display: flex;
+    gap: 0.5em;
+    display: none;
+}
+
+#send-message-form input[name=message] {
+    flex-grow: 1;
+    flex-shrink: 1;
+}
+
+#send-message-form button {
+    flex-grow: 0;
+    flex-shrink: 0;
+}
+
+#peers li::before {
+    content: '👤 ';
 }

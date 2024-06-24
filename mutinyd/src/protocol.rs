@@ -26,12 +26,13 @@ pub enum Request {
         peer: String,
         app_instance_uuid: String,
         from_app_instance_uuid: String,
+        #[serde(with = "serde_bytes")]
         message: Vec<u8>,
     },
-    ReadMessage {
+    MessageRead {
         app_instance_uuid: String,
     },
-    NextMessage {
+    MessageNext {
         app_instance_uuid: String,
     },
     MessageInvites,
@@ -68,6 +69,7 @@ pub enum Response {
 pub struct Message {
     pub peer: String,
     pub uuid: String,
+    #[serde(with = "serde_bytes")]
     pub message: Vec<u8>,
 }
 

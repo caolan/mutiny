@@ -44,6 +44,10 @@ class Server {
             )));
         } else if (pathname === '/_api/v1/message_invites') {
             return new Response(JSON.stringify(await this.client.messageInvites()));
+        } else if (pathname === '/_api/v1/message_read') {
+            return new Response(JSON.stringify(await this.client.messageRead(this.instance.uuid)));
+        } else if (request.method === 'POST' && pathname === '/_api/v1/message_next') {
+            return new Response(JSON.stringify(await this.client.messageNext(this.instance.uuid)));
         } else {
             return new Response(`API response for ${pathname}`);
         }

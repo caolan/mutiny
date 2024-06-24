@@ -75,8 +75,8 @@ type MutinyRequest = {type: "LocalPeerId"}
         from_app_instance_uuid: string,
         message: Uint8Array,
     }
-    | {type: "ReadMessage", app_instance_uuid: string}
-    | {type: "NextMessage", app_instance_uuid: string}
+    | {type: "MessageRead", app_instance_uuid: string}
+    | {type: "MessageNext", app_instance_uuid: string}
     ;
 
 type MutinyResponse = {type: "Success"} 
@@ -202,14 +202,14 @@ export class MutinyClient {
         return;
     }
 
-    async readMessage(app_instance_uuid: string): Promise<Message | null> {
-        const response = await this.request({type: "ReadMessage", app_instance_uuid});
+    async messageRead(app_instance_uuid: string): Promise<Message | null> {
+        const response = await this.request({type: "MessageRead", app_instance_uuid});
         assert(response.type === 'Message');
         return response.message;
     }
 
-    async nextMessage(app_instance_uuid: string): Promise<void> {
-        const response = await this.request({type: "NextMessage", app_instance_uuid});
+    async messageNext(app_instance_uuid: string): Promise<void> {
+        const response = await this.request({type: "MessageNext", app_instance_uuid});
         assert(response.type === 'Success');
         return;
     }
