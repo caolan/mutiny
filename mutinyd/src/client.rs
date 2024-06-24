@@ -56,7 +56,8 @@ impl<Reader: AsyncBufRead + AsyncReadExt + Unpin, Writer: AsyncWrite + AsyncWrit
             request: request,
             response: tx,
         }).await?;
-        self.write_response(rx.await?).await?;
+        let response = rx.await?;
+        self.write_response(response).await?;
         Ok(())
     }
 
@@ -70,7 +71,9 @@ impl<Reader: AsyncBufRead + AsyncReadExt + Unpin, Writer: AsyncWrite + AsyncWrit
                     }
                     panic!("{:?}", e);
                 } else {
-                    panic!("{:?}", err);
+                    self.write_response(Response::Error {
+                        message: format!("{:?}", err),
+                    }).await.expect("Send error response");
                 }
             }
         }
