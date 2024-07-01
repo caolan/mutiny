@@ -6,8 +6,6 @@ use std::io::Write;
 use std::fs;
 use rusqlite;
 
-use crate::dirs;
-
 #[derive(Debug)]
 pub struct Config {
     pub keypair: Keypair,
@@ -36,12 +34,5 @@ impl Config {
         };
         let db_connection = rusqlite::Connection::open(db_path)?;
         Ok(Self { keypair, socket_path, db_connection })
-    }
-
-    pub fn load_defaults() -> Result<Self, Box<dyn Error>> {
-        let socket_path = dirs::open_app_runtime_dir()?.join("mutinyd.socket");
-        let keypair_path = dirs::open_app_data_dir()?.join("identity.key");
-        let db_path = dirs::open_app_data_dir()?.join("data.db");
-        Self::load(keypair_path, socket_path, db_path)
     }
 }
