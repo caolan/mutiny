@@ -6,7 +6,7 @@ deno run \
     --allow-write \
     --allow-net="127.0.0.1:0" \
     --allow-env="XDG_RUNTIME_DIR,HOME" \
-    $DIR/main.ts \
+    $DIR/src/main.ts \
     $@
 
 # TODO: have initial process spawn another dropping permissions and

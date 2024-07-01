@@ -1,9 +1,9 @@
-import { connect, defaultSocketPath, MutinyClient, Message } from "../lib/client.ts";
-import { readManifest } from "../lib/manifest.ts";
+import { connect, defaultSocketPath, MutinyClient, Message } from "../../lib/client.ts";
+import { readManifest } from "../../lib/manifest.ts";
 import { serveDir } from "@std/http";
 import { join } from "@std/path";
 
-class Server {
+export class Server {
     constructor (
         private client: MutinyClient,
         private instance: {
@@ -29,10 +29,11 @@ class Server {
             return new Response(JSON.stringify(await this.client.peers()));
         } else if (request.method === 'POST' && pathname === '/_api/v1/message_invite') {
             const data = await request.json();
-            return new Response(JSON.stringify(await this.client.messageInvite(
+            await this.client.messageInvite(
                 data.peer,
                 this.instance.uuid,
-            )));
+            );
+            return new Response(JSON.stringify({success: true}));
         } else if (request.method === 'POST' && pathname === '/_api/v1/message_send') {
             const data = await request.json();
             const message = new TextEncoder().encode(data.message);
@@ -52,7 +53,8 @@ class Server {
                 message: new TextDecoder().decode(m.message),
             }));
         } else if (request.method === 'POST' && pathname === '/_api/v1/message_next') {
-            return new Response(JSON.stringify(await this.client.messageNext(this.instance.uuid)));
+            await this.client.messageNext(this.instance.uuid);
+            return new Response(JSON.stringify({success: true}));
         } else {
             return new Response(`API response for ${pathname}`);
         }
