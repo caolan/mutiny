@@ -145,3 +145,10 @@ Deno.test("Next message", async () => {
     assertEquals(data, {success: true});
     assertEquals(calls, [INSTANCE.uuid]);
 });
+
+Deno.test("Unknown API path", async () => {
+    const server = makeServer({});
+    const request = new Request(`${BASE_URL}/_api/v1/not_found`);
+    const response = await server.handleRequest(request);
+    assertEquals(response.status, 404);
+});

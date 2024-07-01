@@ -56,7 +56,7 @@ export class Server {
             await this.client.messageNext(this.instance.uuid);
             return new Response(JSON.stringify({success: true}));
         } else {
-            return new Response(`API response for ${pathname}`);
+            return new Response('Not found', {status: 404});
         }
     }
 
