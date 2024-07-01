@@ -91,3 +91,95 @@ pub fn create_client(
         writer,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn decode_request_and_send_over_channel() {
+        let response = Vec::new();
+        let (tx, mut rx) = mpsc::channel(100);
+        let handle = tokio::spawn(async move {
+            let mut request = Vec::new();
+
+            // Serialize request
+            let mut serialized = Vec::<u8>::new();
+            Request::LocalPeerId.serialize(
+                &mut Serializer::new(&mut serialized).with_struct_map()
+            ).unwrap();
+            let len = u32::try_from(serialized.len()).unwrap();
+            // Write message length
+            request.write_all(&len.to_be_bytes()).await.unwrap();
+            // Write serialized message
+            request.write_all(&serialized).await.unwrap();
+
+            let client = Client {
+                request_sender: tx,
+                reader: request.as_slice(),
+                writer: response,
+            };
+            client.start().await;
+        });
+        let message = rx.recv().await.unwrap();
+        handle.abort();
+        assert_eq!(message.request, Request::LocalPeerId);
+    }
+
+    #[tokio::test]
+    async fn receive_from_channel_and_write_serialized_response() {
+        // Use temporary file so we can read it later without having to
+        // manage ownership over a vector.
+        let path = std::env::temp_dir().join("mutiny-response.tmp");
+        let response = tokio::fs::File::create(&path).await.unwrap();
+
+        let (tx, mut rx) = mpsc::channel(100);
+        let handle = tokio::spawn(async move {
+            let mut request = Vec::new();
+
+            // Serialize request
+            let mut serialized = Vec::<u8>::new();
+            Request::LocalPeerId.serialize(
+                &mut Serializer::new(&mut serialized).with_struct_map()
+            ).unwrap();
+            let len = u32::try_from(serialized.len()).unwrap();
+            // Write message length
+            request.write_all(&len.to_be_bytes()).await.unwrap();
+            // Write serialized message
+            request.write_all(&serialized).await.unwrap();
+
+            let client = Client {
+                request_sender: tx,
+                reader: request.as_slice(),
+                writer: response,
+            };
+            client.start().await;
+        });
+
+        let message = rx.recv().await.unwrap();
+        assert_eq!(message.request, Request::LocalPeerId);
+        let res = Response::LocalPeerId {
+            peer_id: String::from("peer123")
+        };
+        // Serialize response
+        let mut serialized = Vec::<u8>::new();
+        res.serialize(
+            &mut Serializer::new(&mut serialized).with_struct_map()
+        ).unwrap();
+        let len = u32::try_from(serialized.len()).unwrap();
+        let mut expected = Vec::new();
+        // Write message length
+        expected.write_all(&len.to_be_bytes()).await.unwrap();
+        // Write serialized message
+        expected.write_all(&serialized).await.unwrap();
+        // Send to client task
+        message.response.send(res).unwrap();
+
+        // Give the client task chance to write the response
+        tokio::time::sleep(std::time::Duration::from_millis(0)).await;
+        assert_eq!(tokio::fs::read(&path).await.unwrap(), expected);
+
+        handle.abort();
+        tokio::fs::remove_file(&path).await.unwrap();
+    }
+}

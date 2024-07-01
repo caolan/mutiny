@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Manifest {
     pub id: String,
     pub version: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag="type")]
 pub enum Request {
     CreateAppInstance {
@@ -38,7 +38,7 @@ pub enum Request {
     MessageInvites,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag="type")]
 pub enum Response {
     Success,
@@ -65,7 +65,7 @@ pub enum Response {
     },
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Message {
     pub peer: String,
     pub uuid: String,
@@ -73,7 +73,7 @@ pub struct Message {
     pub message: Vec<u8>,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct MessageInvite {
     pub peer: String,
     pub app_instance_uuid: String,
