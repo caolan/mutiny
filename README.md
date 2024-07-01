@@ -24,6 +24,22 @@ Then, run mutiny to check communication between daemon and CLI:
 ./mutiny/mutiny
 ```
 
+## Help
+
+### mutinyd
+
+```
+Runtime for peer-to-peer web apps
+
+Usage: mutinyd [OPTIONS]
+
+Options:
+  -s, --socket <SOCKET>  Unix socket to bind to
+  -d, --data <DATA>      Local peer's data directory
+  -h, --help             Print help
+  -V, --version          Print version
+```
+
 ## Examples
 
 ### Ping
