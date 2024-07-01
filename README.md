@@ -69,3 +69,33 @@ And open the displayed URL in your browser. Repeat this process on another
 machine on your local network and it will hopefully add a discovered
 peer to the list on the left. Click on the peer to type messages to
 each another.
+
+## Tests
+
+### Integration
+
+Integration tests can be found in the top `tests` directory - these
+exercise multiple programs and test the interation between them.
+
+```
+cd tests
+deno test -A
+```
+
+### mutinyd
+
+Unit tests for the mutiny daemon:
+
+```
+cd mutinyd
+cargo test
+```
+
+### mutiny-app
+
+Unit tests for the mutiny-app server:
+
+```
+cd mutiny-app
+deno test -A
+```
