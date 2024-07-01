@@ -1,9 +1,10 @@
+import { join } from "@std/path/join";
 import { assertEquals } from "@std/assert";
 import { MutinyClient } from "../../lib/client.ts";
 import { Server }from "../src/main.ts";
 
 const BASE_URL = "http://localhost:8000";
-const ROOT = import.meta.dirname as string;
+const ROOT = join(import.meta.dirname as string, "www");
 
 const INSTANCE = {
     uuid: "1234567890",
@@ -151,4 +152,13 @@ Deno.test("Unknown API path", async () => {
     const request = new Request(`${BASE_URL}/_api/v1/not_found`);
     const response = await server.handleRequest(request);
     assertEquals(response.status, 404);
+});
+
+Deno.test("Get static file from app root directory", async () => {
+    const server = makeServer({});
+    const request = new Request(`${BASE_URL}/example.txt`);
+    const response = await server.handleRequest(request);
+    assertEquals(response.status, 200);
+    const data = await response.text();
+    assertEquals(data, "Hello, world!\n");
 });
