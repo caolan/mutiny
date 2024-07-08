@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{fs, path::PathBuf};
 use clap::Parser;
 
 mod protocol;
@@ -29,6 +29,8 @@ async fn main() {
     let socket_path = args.socket.unwrap_or_else(|| dirs::open_app_runtime_dir().unwrap().join("mutinyd.socket"));
     let keypair_path = data_dir.join("identity.key");
     let db_path = data_dir.join("data.db");
+    // Ensure data directory exists
+    fs::create_dir_all(data_dir).unwrap();
     let config = config::Config::load(keypair_path, socket_path, db_path).unwrap();
     server::Server::start(config).await.unwrap();
 }
