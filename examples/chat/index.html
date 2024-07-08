@@ -8,18 +8,12 @@
         <script type="module" src="main.js"></script>
     </head>
     <body>
-        <header>
-            <h1>Chat example</h1>
-            <span id="local-peer-id"></span>
-        </header>
+        <chat-header></chat-header>
         <main>
-            <div id="peers"></div>
+            <chat-peers></chat-peers>
             <div id="messages">
-                <pre id="message-history"></pre>
-                <form id="send-message-form">
-                    <input type="text" name="message" placeholder="Type your message&hellip;" />
-                    <button type="submit">Send</button>
-                </form>
+                <chat-message-history></chat-message-history>
+                <chat-send-message-form></chat-send-message-form>
             </div>
         </main>
     </body>

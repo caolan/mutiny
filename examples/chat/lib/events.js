@@ -13,3 +13,9 @@ export function delegate(node, event_name, selector, listener, options) {
     // Return undelegate function
     return () => node.removeEventListener(event_name, fn);
 }
+
+export function bind(node, event_name, listener, options) {
+    node.addEventListener(event_name, listener, options);
+    // Return unbind function
+    return () => node.removeEventListener(event_name, listener);
+}

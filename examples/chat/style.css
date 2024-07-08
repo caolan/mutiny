@@ -27,14 +27,14 @@ main {
     flex-grow: 1;
 }
 
-#peers, #messages {
+chat-peers, #messages {
     padding: 0;
     margin: 0;
     box-sizing: border-box;
     min-height: 100%;
 }
 
-#peers {
+chat-peers {
     padding: 1em;
     border-right: 1px solid #ccc;
     width: 20%;
@@ -67,7 +67,7 @@ main {
     flex-shrink: 1;
 }
 
-#message-history {
+chat-message-history {
     flex-grow: 1;
     flex-shrink: 1;
     padding: 1em;
