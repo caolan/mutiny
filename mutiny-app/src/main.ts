@@ -83,18 +83,18 @@ export class Server {
 }
 
 if (import.meta.main) {
-    if (Deno.args.length < 1) {
-        console.error("Usage: mutiny-app INSTANCE_NAME [PATH]");
+    if (Deno.args.length < 2) {
+        console.error("Usage: mutiny-app LABEL PATH");
         Deno.exit(1);
     }
     const socket_path = defaultSocketPath(); 
-    const name = Deno.args[0];
-    const root = Deno.args[1] || '.';
+    const label = Deno.args[0];
+    const root = Deno.args[1];
     const manifest = await readManifest(join(root, "mutiny.json"));
 
     const client = await connect({socket_path});
     const uuid = (
-        await client.appInstanceUuid(name) ?? 
+        await client.appInstanceUuid(label) ?? 
         await client.createAppInstance(name, manifest)
     );
 
