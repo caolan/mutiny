@@ -40,6 +40,17 @@ Options:
   -V, --version          Print version
 ```
 
+## Running multiple instances
+
+For testing, it can be useful to run multiple instances of `mutinyd`
+on the same machine. To do so, set a custom socket path and data
+directory:
+
+```
+cd mutinyd
+cargo run -- --socket ./mutiny2.sock --data ./data2
+```
+
 ## Examples
 
 ### Ping
