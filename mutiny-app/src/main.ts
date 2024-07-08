@@ -1,5 +1,6 @@
 import { connect, defaultSocketPath, MutinyClient, Message } from "../../lib/client.ts";
 import { readManifest } from "../../lib/manifest.ts";
+import { parseArgs } from "@std/cli/parse-args";
 import { serveDir } from "@std/http";
 import { join } from "@std/path";
 
@@ -84,12 +85,16 @@ export class Server {
 
 if (import.meta.main) {
     if (Deno.args.length < 2) {
-        console.error("Usage: mutiny-app LABEL PATH");
+        console.error("Usage: mutiny-app [OPTIONS] LABEL PATH");
+        console.error("");
+        console.error("Options:");
+        console.error("  -s, --socket <SOCKET>  Unix socket to bind to");
         Deno.exit(1);
     }
-    const socket_path = defaultSocketPath(); 
-    const label = Deno.args[0];
-    const root = Deno.args[1];
+    const args = parseArgs(Deno.args);
+    const socket_path = args.s || args.socket || defaultSocketPath(); 
+    const label = args._[0];
+    const root = args._[1];
     const manifest = await readManifest(join(root, "mutiny.json"));
 
     const client = await connect({socket_path});

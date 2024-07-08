@@ -7,6 +7,7 @@
     "@std/http": "jsr:@std/http@^0.224.4",
     "@std/io": "jsr:@std/io@^0.224.1",
     "@std/msgpack": "jsr:@std/msgpack@^0.224.2",
-    "@std/path": "jsr:@std/path@^0.225.2"
+    "@std/path": "jsr:@std/path@^0.225.2",
+    "@std/cli": "jsr:@std/cli@^0.224.7"
   }
 }

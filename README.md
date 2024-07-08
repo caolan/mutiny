@@ -51,6 +51,13 @@ cd mutinyd
 cargo run -- --socket ./mutiny2.sock --data ./data2
 ```
 
+You can then run apps on your additional instance using the `--socket`
+option:
+
+```
+./mutiny-app/mutiny-app --socket ./mutinyd/mutiny2.sock chat ./examples/chat
+```
+
 ## Examples
 
 ### Ping

@@ -6,7 +6,8 @@
       "jsr:@std/async@^0.224.2": "jsr:@std/async@0.224.2",
       "jsr:@std/bytes@^0.224.0": "jsr:@std/bytes@0.224.0",
       "jsr:@std/bytes@^1.0.0-rc.3": "jsr:@std/bytes@1.0.0",
-      "jsr:@std/cli@^0.224.6": "jsr:@std/cli@0.224.6",
+      "jsr:@std/cli@^0.224.6": "jsr:@std/cli@0.224.7",
+      "jsr:@std/cli@^0.224.7": "jsr:@std/cli@0.224.7",
       "jsr:@std/encoding@1.0.0-rc.2": "jsr:@std/encoding@1.0.0-rc.2",
       "jsr:@std/fmt@^0.225.4": "jsr:@std/fmt@0.225.4",
       "jsr:@std/http@^0.224.4": "jsr:@std/http@0.224.4",
@@ -38,6 +39,9 @@
       },
       "@std/cli@0.224.6": {
         "integrity": "98d7e17a70c1c24980baa2b9a511b29e0a460e7a3b8e3d4e220979d77d5f348e"
+      },
+      "@std/cli@0.224.7": {
+        "integrity": "654ca6477518e5e3a0d3fabafb2789e92b8c0febf1a1d24ba4b567aba94b5977"
       },
       "@std/encoding@1.0.0-rc.2": {
         "integrity": "160d7674a20ebfbccdf610b3801fee91cf6e42d1c106dd46bbaf46e395cd35ef"
@@ -255,6 +259,7 @@
   "workspace": {
     "dependencies": [
       "jsr:@std/assert@^0.226.0",
+      "jsr:@std/cli@^0.224.7",
       "jsr:@std/http@^0.224.4",
       "jsr:@std/io@^0.224.1",
       "jsr:@std/msgpack@^0.224.2",
