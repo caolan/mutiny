@@ -93,8 +93,8 @@ if (import.meta.main) {
     }
     const args = parseArgs(Deno.args);
     const socket_path = args.s || args.socket || defaultSocketPath(); 
-    const label = args._[0];
-    const root = args._[1];
+    const label = "" + args._[0];
+    const root = "" + args._[1];
     const manifest = await readManifest(join(root, "mutiny.json"));
 
     const client = await connect({socket_path});
