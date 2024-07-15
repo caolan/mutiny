@@ -1,10 +1,10 @@
 <h1>Ping example</h1>
 
-<dt>Application instance name</dt>
-<dd id="app_instance_name"></dd>
+<dt>Application label</dt>
+<dd id="app_label"></dd>
 
-<dt>Application instance UUID</dt>
-<dd id="app_instance_uuid"></dd>
+<dt>Application UUID</dt>
+<dd id="app_uuid"></dd>
 
 <dt>Local peer ID</dt>
 <dd id="local_peer_id"></dd>
@@ -13,10 +13,10 @@
 <ul id="discovered_peers"></ul>
 
 <script>
-    fetch("/_api/v1/application_instance").then(async (res) => {
+    fetch("/_api/v1/application").then(async (res) => {
         const data = await res.json();
-        app_instance_name.textContent = data.name;
-        app_instance_uuid.textContent = data.uuid;
+        app_label.textContent = data.label;
+        app_uuid.textContent = data.uuid;
     });
     fetch("/_api/v1/local_peer_id").then(async (res) => {
         local_peer_id.textContent = await res.text();
@@ -24,9 +24,10 @@
     async function updatePeers() {
         const res = await fetch("/_api/v1/peers");
         const data = await res.json();
+        console.log(data);
         const peers = data.map(peer => {
             const li = document.createElement('li');
-            li.textContent = peer.id;
+            li.textContent = peer;
             return li;
         });
         discovered_peers.replaceChildren(...peers);

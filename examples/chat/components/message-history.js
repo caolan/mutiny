@@ -29,11 +29,11 @@ export default class ChatMessageHistory extends HTMLElement {
             for (const msg of messages.value) {
                 const match_from = (
                     msg.from.peer === selected_invite.value.peer &&
-                    msg.from.app_instance_uuid === selected_invite.value.app_instance_uuid
+                    msg.from.app_uuid === selected_invite.value.app_uuid
                 );
                 const match_to = (
                     msg.to.peer === selected_invite.value.peer &&
-                    msg.to.app_instance_uuid === selected_invite.value.app_instance_uuid
+                    msg.to.app_uuid === selected_invite.value.app_uuid
                 );
                 if (match_from || match_to) {
                     const from = msg.from.peer === local_peer_id.value ? 'You' : msg.from.peer;

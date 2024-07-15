@@ -6,13 +6,11 @@ use std::error::Error;
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Request {
     Invite {
-        app_instance_uuid: String,
-        app_id: String,
-        app_version: String,
+        app_uuid: String,
     },
     Message {
-        from_app_instance_uuid: String,
-        to_app_instance_uuid: String,
+        from_app_uuid: String,
+        to_app_uuid: String,
         message: Vec<u8>,
     },
 }

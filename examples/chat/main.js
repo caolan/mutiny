@@ -14,7 +14,7 @@ async function updateLocalPeerId() {
 }
 
 async function updateLocalAppInstance() {
-    const data = await fetch("/_api/v1/application_instance").then(
+    const data = await fetch("/_api/v1/application").then(
         res => res.json()
     );
     state.local_app_uuid.value = data.uuid;
@@ -52,11 +52,11 @@ async function getMessages() {
         if (data && state.local_peer_id.value && state.local_app_uuid.value) {
             const from = {
                 peer: data.peer,
-                app_instance_uuid: data.uuid,
+                app_uuid: data.uuid,
             };
             const to = {
                 peer: state.local_peer_id.value,
-                app_instance_uuid: state.local_app_uuid.value,
+                app_uuid: state.local_app_uuid.value,
             };
             state.appendMessage(from, to, data.message);
             await fetch("/_api/v1/message_next", {method: "POST"});

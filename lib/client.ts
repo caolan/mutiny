@@ -4,7 +4,6 @@ import { resolve } from "@std/path";
 import { writeAll } from "@std/io";
 import * as msgpack from "@std/msgpack";
 import { readFullBuffer } from "./streams.ts";
-import { Manifest } from "./manifest.ts";
 import { assert } from "./assert.ts";
 
 function ifDefined<T, R>(value: undefined | T, f: (value: T) => R): R | undefined {
@@ -56,27 +55,25 @@ export type Message = {
 
 export type MessageInvite = {
     peer: string, 
-    app_instance_uuid: string,
-    manifest_id: string,
-    manifest_version: string,
+    app_uuid: string,
 };
 
 type MutinyRequest = {type: "LocalPeerId"}
     | {type: "Peers"}
     | {type: "Invites"}
     | {type: "AppInstanceUuid", label: string}
-    | {type: "CreateAppInstance", label: string, manifest: Manifest}
-    | {type: "MessageInvite", peer: string, app_instance_uuid: string}
+    | {type: "CreateAppInstance", label: string}
+    | {type: "MessageInvite", peer: string, app_uuid: string}
     | {type: "MessageInvites"}
     | {
         type: "MessageSend", 
         peer: string,
-        app_instance_uuid: string,
-        from_app_instance_uuid: string,
+        app_uuid: string,
+        from_app_uuid: string,
         message: Uint8Array,
     }
-    | {type: "MessageRead", app_instance_uuid: string}
-    | {type: "MessageNext", app_instance_uuid: string}
+    | {type: "MessageRead", app_uuid: string}
+    | {type: "MessageNext", app_uuid: string}
     ;
 
 type MutinyResponse = {type: "Success"} 
@@ -167,14 +164,14 @@ export class MutinyClient {
         return response.uuid;
     }
 
-    async createAppInstance(label: string, manifest: Manifest): Promise<string> {
-        const response = await this.request({type: "CreateAppInstance", label, manifest});
+    async createAppInstance(label: string): Promise<string> {
+        const response = await this.request({type: "CreateAppInstance", label});
         assert(response.type === 'CreateAppInstance');
         return response.uuid;
     }
 
-    async messageInvite(peer: string, app_instance_uuid: string): Promise<void> {
-        const response = await this.request({type: "MessageInvite", peer, app_instance_uuid});
+    async messageInvite(peer: string, app_uuid: string): Promise<void> {
+        const response = await this.request({type: "MessageInvite", peer, app_uuid});
         assert(response.type === 'Success');
         return;
     }
@@ -187,29 +184,29 @@ export class MutinyClient {
 
     async messageSend(
         peer: string,
-        app_instance_uuid: string,
-        from_app_instance_uuid: string,
+        app_uuid: string,
+        from_app_uuid: string,
         message: Uint8Array
     ): Promise<void> {
         const response = await this.request({
             type: "MessageSend", 
             peer, 
-            app_instance_uuid,
-            from_app_instance_uuid,
+            app_uuid,
+            from_app_uuid,
             message,
         });
         assert(response.type === 'Success');
         return;
     }
 
-    async messageRead(app_instance_uuid: string): Promise<Message | null> {
-        const response = await this.request({type: "MessageRead", app_instance_uuid});
+    async messageRead(app_uuid: string): Promise<Message | null> {
+        const response = await this.request({type: "MessageRead", app_uuid});
         assert(response.type === 'Message');
         return response.message;
     }
 
-    async messageNext(app_instance_uuid: string): Promise<void> {
-        const response = await this.request({type: "MessageNext", app_instance_uuid});
+    async messageNext(app_uuid: string): Promise<void> {
+        const response = await this.request({type: "MessageNext", app_uuid});
         assert(response.type === 'Success');
         return;
     }

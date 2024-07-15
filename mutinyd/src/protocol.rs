@@ -1,17 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct Manifest {
-    pub id: String,
-    pub version: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag="type")]
 pub enum Request {
     CreateAppInstance {
         label: String,
-        manifest: Manifest
     },
     AppInstanceUuid {
         label: String,
@@ -20,20 +13,20 @@ pub enum Request {
     Peers,
     MessageInvite {
         peer: String,
-        app_instance_uuid: String,
+        app_uuid: String,
     },
     MessageSend {
         peer: String,
-        app_instance_uuid: String,
-        from_app_instance_uuid: String,
+        app_uuid: String,
+        from_app_uuid: String,
         #[serde(with = "serde_bytes")]
         message: Vec<u8>,
     },
     MessageRead {
-        app_instance_uuid: String,
+        app_uuid: String,
     },
     MessageNext {
-        app_instance_uuid: String,
+        app_uuid: String,
     },
     MessageInvites,
 }
@@ -76,7 +69,5 @@ pub struct Message {
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct MessageInvite {
     pub peer: String,
-    pub app_instance_uuid: String,
-    pub manifest_id: String,
-    pub manifest_version: String,
+    pub app_uuid: String,
 }

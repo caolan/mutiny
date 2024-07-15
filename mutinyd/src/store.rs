@@ -18,7 +18,7 @@ impl Store {
         })
     }
 
-    pub fn generate_app_instance_uuid() -> String {
+    pub fn generate_app_uuid() -> String {
         let buffer = &mut Uuid::encode_buffer();
         return Uuid::new_v4().hyphenated().encode_lower(buffer).to_owned();
     }
@@ -46,6 +46,7 @@ impl<'a> StoreTransaction<'a> {
             let version = self.version()?;
             match version {
                 0 => {
+                    // Initial app + messaging structure
                     println!("Migrating database to version 1");
                     self.tx.execute_batch(
                         "CREATE TABLE peer (
@@ -104,136 +105,89 @@ impl<'a> StoreTransaction<'a> {
                          PRAGMA user_version = 1;"
                     )?;
                 },
+                1 => {
+                    // Drop app manifests (name, version)
+                    println!("Migrating database to version 2");
+                    self.tx.execute_batch(
+                        "ALTER TABLE app_instance DROP app_version_id;
+                         DROP TABLE app_version;
+                         DROP TABLE app;
+                         ALTER TABLE app_instance RENAME TO app;
+                         ALTER TABLE app_instance_label RENAME app_instance_id TO app_id;
+                         ALTER TABLE app_instance_label RENAME TO app_label;
+                         ALTER TABLE message_invite RENAME app_instance_id TO app_id;
+                         ALTER TABLE message_allow RENAME from_app_instance_id TO from_app_id;
+                         ALTER TABLE message_allow RENAME to_app_instance_id TO to_app_id;
+                         ALTER TABLE message_inbox RENAME from_app_instance_id TO from_app_id;
+                         ALTER TABLE message_inbox RENAME to_app_instance_id TO to_app_id;
+                         ALTER TABLE message_outbox RENAME from_app_instance_id TO from_app_id;
+                         ALTER TABLE message_outbox RENAME to_app_instance_id TO to_app_id;
+                         PRAGMA user_version = 2;"
+                    )?;
+                },
                 _ => break,
             }
         }
         Ok(())
     }
 
-    pub fn get_app(&self, manifest_id: &str) -> Result<Option<i64>> {
+    pub fn get_app(&self, peer_id: i64, uuid: &str) -> Result<Option<i64>> {
         let mut stmt = self.tx.prepare_cached(
             "SELECT id
              FROM app
-             WHERE manifest_id = ?1",
-        )?;
-        stmt.query_row([manifest_id], |row| row.get::<_, i64>(0)).optional()
-    }
-
-    pub fn put_app(&self, manifest_id: &str) -> Result<i64> {
-        let mut stmt = self.tx.prepare_cached(
-            "INSERT INTO app (manifest_id)
-             VALUES (?1)
-             RETURNING id",
-        )?;
-        stmt.query_row([manifest_id], |row| row.get::<_, i64>(0))
-    }
-
-    pub fn get_or_put_app(&self, manifest_id: &str) -> Result<i64> {
-        if let Some(id) = self.get_app(manifest_id)? {
-            return Ok(id);
-        }
-        self.put_app(manifest_id)
-    }
-
-    pub fn get_app_version(&self, app_id: i64, manifest_version: &str) -> Result<Option<i64>> {
-        let mut stmt = self.tx.prepare_cached(
-            "SELECT id
-             FROM app_version
-             WHERE app_id = ?1 AND manifest_version = ?2",
-        )?;
-        stmt.query_row(params![app_id, manifest_version], |row| {
-            row.get::<_, i64>(0)
-        }).optional()
-    }
-
-    pub fn put_app_version(&self, app_id: i64, manifest_version: &str) -> Result<i64> {
-        let mut stmt = self.tx.prepare_cached(
-            "INSERT INTO app_version (
-                 app_id,
-                 manifest_version
-             )
-             VALUES (?1, ?2)
-             RETURNING id",
-        )?;
-        stmt.query_row(params![app_id, manifest_version], |row| {
-            row.get::<_, i64>(0)
-        })
-    }
-
-    pub fn get_or_put_app_version(&self, app_id: i64, manifest_version: &str) -> Result<i64> {
-        if let Some(id) = self.get_app_version(app_id, manifest_version)? {
-            return Ok(id);
-        }
-        self.put_app_version(app_id, manifest_version)
-    }
-
-    pub fn get_app_instance(&self, peer_id: i64, uuid: &str) -> Result<Option<i64>> {
-        let mut stmt = self.tx.prepare_cached(
-            "SELECT id
-             FROM app_instance
              WHERE peer_id = ?1 AND uuid = ?2",
         )?;
         stmt.query_row(params![peer_id, uuid], |row| row.get::<_, i64>(0)).optional()
     }
 
-    pub fn get_app_instance_uuid(&self, app_instance_id: i64) -> Result<Option<String>> {
+    pub fn get_app_uuid(&self, app_id: i64) -> Result<Option<String>> {
         let mut stmt = self.tx.prepare_cached(
             "SELECT uuid
-             FROM app_instance
+             FROM app
              WHERE id = ?1",
         )?;
-        stmt.query_row([app_instance_id], |row| row.get::<_, String>(0)).optional()
+        stmt.query_row([app_id], |row| row.get::<_, String>(0)).optional()
     }
 
-    pub fn put_app_instance(&self, peer_id: i64, app_version_id: i64, uuid: &str) -> Result<i64> {
+    pub fn put_app(&self, peer_id: i64, uuid: &str) -> Result<i64> {
         let mut stmt = self.tx.prepare_cached(
-            "INSERT INTO app_instance (peer_id, app_version_id, uuid)
-             VALUES (?1, ?2, ?3)
+            "INSERT INTO app (peer_id, uuid)
+             VALUES (?1, ?2)
              RETURNING id;",
         )?;
-        stmt.query_row(params![peer_id, app_version_id, uuid], |row| {
+        stmt.query_row(params![peer_id, uuid], |row| {
             row.get::<_, i64>(0)
         })
     }
 
-    pub fn get_or_put_app_instance(
+    pub fn get_or_put_app(
         &self,
         peer_id: i64,
-        app_version_id: i64,
         uuid: &str,
     ) -> Result<i64> {
-        if let Some(id) = self.get_app_instance(peer_id, uuid)? {
+        if let Some(id) = self.get_app(peer_id, uuid)? {
             return Ok(id);
         }
-        self.put_app_instance(peer_id, app_version_id, uuid)
+        self.put_app(peer_id, uuid)
     }
 
-    pub fn get_app_instance_by_label(&self, label: &str) -> Result<Option<i64>> {
+    pub fn get_app_by_label(&self, label: &str) -> Result<Option<i64>> {
         let mut stmt = self.tx.prepare_cached(
-            "SELECT app_instance_id
-             FROM app_instance_label
+            "SELECT app_id
+             FROM app_label
              WHERE label = ?1",
         )?;
         stmt.query_row([label], |row| row.get::<_, i64>(0)).optional()
     }
 
-    pub fn put_app_instance_label(&self, app_instance_id: i64, label: &str) -> Result<()> {
+    pub fn put_app_label(&self, app_id: i64, label: &str) -> Result<()> {
         let mut stmt = self.tx.prepare_cached(
-            "INSERT INTO app_instance_label (app_instance_id, label)
+            "INSERT INTO app_label (app_id, label)
              VALUES (?1, ?2);",
         )?;
-        stmt.execute(params![app_instance_id, label])?;
+        stmt.execute(params![app_id, label])?;
         Ok(())
     }
-
-    // pub fn get_or_put_app_instance_label(
-    //     &self,
-    //     app_instance_id: i64,
-    //     label: &str,
-    // ) -> Result<i64> {
-    //     self.get_app_instance_label(app_instance_id)
-    //         .or_else(|_| self.put_app_instance_label(app_instance_id, label))
-    // }
 
     pub fn get_peer(&self, peer_id: &str) -> Result<Option<i64>> {
         let mut stmt = self.tx.prepare_cached(
@@ -292,7 +246,7 @@ impl<'a> StoreTransaction<'a> {
 
     pub fn put_message_inbox(&self, received: i64, from: i64, to: i64, message_id: i64) -> Result<i64> {
         let mut stmt = self.tx.prepare_cached(
-            "INSERT INTO message_inbox (received, from_app_instance_id, to_app_instance_id, message_id)
+            "INSERT INTO message_inbox (received, from_app_id, to_app_id, message_id)
              VALUES (?1, ?2, ?3, ?4)
              RETURNING id",
         )?;
@@ -310,7 +264,7 @@ impl<'a> StoreTransaction<'a> {
 
     pub fn put_message_outbox(&self, queued: i64, from: i64, to: i64, message_id: i64) -> Result<i64> {
         let mut stmt = self.tx.prepare_cached(
-            "INSERT INTO message_outbox (queued, from_app_instance_id, to_app_instance_id, message_id)
+            "INSERT INTO message_outbox (queued, from_app_id, to_app_id, message_id)
              VALUES (?1, ?2, ?3, ?4)
              RETURNING id",
         )?;
@@ -326,76 +280,57 @@ impl<'a> StoreTransaction<'a> {
         self.prune_message_data()
     }
 
-    pub fn get_message_invite(&self, app_instance_id: i64) -> Result<Option<i64>> {
+    pub fn get_message_invite(&self, app_id: i64) -> Result<Option<i64>> {
         let mut stmt = self.tx.prepare_cached(
             "SELECT id
              FROM message_invite
-             WHERE app_instance_id = ?1",
+             WHERE app_id = ?1",
         )?;
-        stmt.query_row([app_instance_id], |row| row.get::<_, i64>(0)).optional()
+        stmt.query_row([app_id], |row| row.get::<_, i64>(0)).optional()
     }
 
     pub fn list_message_invites(&self) -> Result<Vec<MessageInvite>> {
         let mut stmt = self.tx.prepare_cached(
-            "SELECT peer.peer_id, uuid, manifest_id, manifest_version
+            "SELECT peer.peer_id, uuid
              FROM message_invite
-             JOIN app_instance ON app_instance.id = app_instance_id
-             JOIN app_version ON app_version.id = app_version_id
              JOIN app ON app.id = app_id
-             JOIN peer ON peer.id = app_instance.peer_id",
+             JOIN peer ON peer.id = app.peer_id",
         )?;
         let mut rows = stmt.query([])?;
         let mut results = Vec::new();
         while let Some(row) = rows.next()? {
             results.push(MessageInvite {
                 peer: row.get(0)?,
-                app_instance_uuid: row.get(1)?,
-                manifest_id: row.get(2)?,
-                manifest_version: row.get(3)?,
+                app_uuid: row.get(1)?,
             });
         }
         return Ok(results);
     }
 
-    pub fn put_message_invite(&self, received: i64, app_instance_id: i64) -> Result<i64> {
+    pub fn put_message_invite(&self, received: i64, app_id: i64) -> Result<i64> {
         let mut stmt = self.tx.prepare_cached(
-            "INSERT INTO message_invite (received, app_instance_id)
+            "INSERT INTO message_invite (received, app_id)
              VALUES (?1, ?2)
              RETURNING id",
         )?;
-        stmt.query_row([received, app_instance_id], |row| row.get::<_, i64>(0))
+        stmt.query_row([received, app_id], |row| row.get::<_, i64>(0))
     }
 
-    pub fn get_or_put_message_invite(&self, received: i64, app_instance_id: i64) -> Result<i64> {
-        if let Some(id) = self.get_message_invite(app_instance_id)? {
+    pub fn get_or_put_message_invite(&self, received: i64, app_id: i64) -> Result<i64> {
+        if let Some(id) = self.get_message_invite(app_id)? {
             return Ok(id);
         }
-        self.put_message_invite(received, app_instance_id)
-    }
-
-    pub fn get_app_id_and_version(&self, peer: &str, uuid: &str) -> Result<Option<(String, String)>> {
-        let mut stmt = self.tx.prepare_cached(
-            "SELECT manifest_id, manifest_version
-             FROM app_instance
-             JOIN app_version ON app_version.id = app_version_id
-             JOIN app ON app.id = app_version.app_id
-             JOIN peer ON peer.id = app_instance.peer_id
-             WHERE peer.peer_id = ?1 AND uuid = ?2",
-        )?;
-        stmt.query_row(
-            [&peer, &uuid],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        ).optional()
+        self.put_message_invite(received, app_id)
     }
 
     pub fn read_message(&self, app_id: i64) -> Result<Option<Message>> {
         let mut stmt = self.tx.prepare_cached(
-            "SELECT peer.peer_id, app_instance.uuid, data
+            "SELECT peer.peer_id, app.uuid, data
              FROM message_inbox
              JOIN message_data ON message_data.id = message_id
-             JOIN app_instance ON app_instance.id = from_app_instance_id
-             JOIN peer ON peer.id = app_instance.peer_id
-             WHERE to_app_instance_id = ?1
+             JOIN app ON app.id = from_app_id
+             JOIN peer ON peer.id = app.peer_id
+             WHERE to_app_id = ?1
              ORDER BY message_inbox.id ASC
              LIMIT 1",
         )?;
@@ -414,7 +349,7 @@ impl<'a> StoreTransaction<'a> {
              WHERE id IN (
                  SELECT min(id)
                  FROM message_inbox
-                 WHERE to_app_instance_id = ?1
+                 WHERE to_app_id = ?1
              )",
         )?;
         stmt.execute([app_id])?;

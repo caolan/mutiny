@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::swarm::{self, Swarm, MutinyBehaviourEvent};
 use crate::config::Config;
-use crate::protocol::{Request, Response, Manifest, Message};
+use crate::protocol::{Request, Response, Message};
 use crate::client::{create_client, ClientRequest};
 use crate::store::Store;
 
@@ -95,24 +95,18 @@ impl Server {
         let tx = self.store.transaction()?;
         let peer_id = tx.get_or_put_peer(&peer.to_base58())?;
         match request {
-            swarm::Request::Invite {
-                app_instance_uuid,
-                app_id,
-                app_version
-            } => {
-                let app = tx.get_or_put_app(&app_id)?;
-                let version = tx.get_or_put_app_version(app, &app_version)?;
-                let instance = tx.get_or_put_app_instance(peer_id, version, &app_instance_uuid)?;
-                tx.get_or_put_message_invite(received, instance)?;
+            swarm::Request::Invite { app_uuid } => {
+                let app = tx.get_or_put_app(peer_id, &app_uuid)?;
+                tx.get_or_put_message_invite(received, app)?;
             },
             swarm::Request::Message {
-                from_app_instance_uuid,
-                to_app_instance_uuid,
+                from_app_uuid,
+                to_app_uuid,
                 message,
             } => {
                 let local_peer_id = tx.get_peer(&self.peer_id.to_base58())?.ok_or("Cannot find local peer ID in database")?;
-                let from = tx.get_app_instance(peer_id, &from_app_instance_uuid)?.ok_or("Cannot find 'from' app instance in database")?;
-                let to = tx.get_app_instance(local_peer_id, &to_app_instance_uuid)?.ok_or("Cannot find 'to' app instance in database")?;
+                let from = tx.get_app(peer_id, &from_app_uuid)?.ok_or("Cannot find 'from' app in database")?;
+                let to = tx.get_app(local_peer_id, &to_app_uuid)?.ok_or("Cannot find 'to' app in database")?;
                 let message_id = tx.get_or_put_message_data(&message)?;
                 tx.put_message_inbox(received, from, to, message_id)?;
             },
@@ -201,38 +195,28 @@ impl Server {
         Ok(())
     }
 
-    fn create_app_instance(&mut self, label: &str, manifest: &Manifest) -> Result<String, Box<dyn Error>> {
+    fn create_app(&mut self, label: &str) -> Result<String, Box<dyn Error>> {
         let tx = self.store.transaction()?;
-        let uuid = Store::generate_app_instance_uuid();
-        let app_id = tx.get_or_put_app(&manifest.id)?;
-        let app_version_id = tx.get_or_put_app_version(app_id, &manifest.version)?;
+        let uuid = Store::generate_app_uuid();
         let peer_id = tx.get_or_put_peer(&self.peer_id.to_base58())?;
-        let app_instance_id = tx.get_or_put_app_instance(
-            peer_id,
-            app_version_id,
-            &uuid,
-        )?;
-        tx.put_app_instance_label(app_instance_id, label)?;
+        let app_id = tx.get_or_put_app(peer_id, &uuid)?;
+        tx.put_app_label(app_id, label)?;
         tx.commit()?;
         Ok(uuid)
     }
 
-    fn get_app_instance_uuid(&mut self, label: &str) -> Result<Option<String>, Box<dyn Error>> {
+    fn get_app_uuid(&mut self, label: &str) -> Result<Option<String>, Box<dyn Error>> {
         let tx = self.store.transaction()?;
-        if let Some(app_instance_id) = tx.get_app_instance_by_label(label)? {
-            return Ok(tx.get_app_instance_uuid(app_instance_id)?)
+        if let Some(app_id) = tx.get_app_by_label(label)? {
+            return Ok(tx.get_app_uuid(app_id)?)
         }
         Ok(None)
     }
 
     fn send_message_invite(&mut self, to_peer: &str, uuid: String) -> Result<(), Box<dyn Error>> {
         let peer: PeerId = to_peer.parse()?;
-        let tx = self.store.transaction()?;
-        let (app_id, app_version) = tx.get_app_id_and_version(&self.peer_id.to_base58(), &uuid)?.ok_or("Cannot find app id and version in database")?;
         self.swarm.behaviour_mut().request_response.send_request(&peer, swarm::Request::Invite {
-            app_instance_uuid: uuid,
-            app_id,
-            app_version,
+            app_uuid: uuid,
         });
         Ok(())
     }
@@ -243,13 +227,13 @@ impl Server {
         let message_id = tx.get_or_put_message_data(&message)?;
         let from_peer_id = tx.get_or_put_peer(&self.peer_id.to_base58())?;
         let to_peer_id = tx.get_or_put_peer(&to_peer)?;
-        let from = tx.get_app_instance(from_peer_id, &from_uuid)?.ok_or("Cannot find 'from' app instance in database")?;
-        let to = tx.get_app_instance(to_peer_id, &to_uuid)?.ok_or("Cannot find 'to' app instance in database")?;
+        let from = tx.get_app(from_peer_id, &from_uuid)?.ok_or("Cannot find 'from' app instance in database")?;
+        let to = tx.get_app(to_peer_id, &to_uuid)?.ok_or("Cannot find 'to' app instance in database")?;
         let outbox_id = tx.put_message_outbox(queued, from, to, message_id)?;
         let peer: PeerId = to_peer.parse()?;
         let request_id = self.swarm.behaviour_mut().request_response.send_request(&peer, swarm::Request::Message {
-            to_app_instance_uuid: to_uuid,
-            from_app_instance_uuid: from_uuid,
+            to_app_uuid: to_uuid,
+            from_app_uuid: from_uuid,
             message,
         });
         self.delivery_attempts.insert(request_id, outbox_id);
@@ -259,28 +243,28 @@ impl Server {
     fn read_message(&mut self, uuid: String) -> Result<Option<Message>, Box<dyn Error>> {
         let tx = self.store.transaction()?;
         let local_peer_id = tx.get_peer(&self.peer_id.to_base58())?.ok_or("Cannot find local peer ID in database")?;
-        let app_instance_id = tx.get_app_instance(local_peer_id, &uuid)?.ok_or("Cannot find 'to' app instance in database")?;
-        Ok(tx.read_message(app_instance_id)?)
+        let app_id = tx.get_app(local_peer_id, &uuid)?.ok_or("Cannot find 'to' app instance in database")?;
+        Ok(tx.read_message(app_id)?)
     }
 
     fn next_message(&mut self, uuid: String) -> Result<(), Box<dyn Error>> {
         let tx = self.store.transaction()?;
         let local_peer_id = tx.get_peer(&self.peer_id.to_base58())?.ok_or("Cannot find local peer ID in database")?;
-        let app_instance_id = tx.get_app_instance(local_peer_id, &uuid)?.ok_or("Cannot find 'to' app instance in database")?;
-        tx.next_message(app_instance_id)?;
+        let app_id = tx.get_app(local_peer_id, &uuid)?.ok_or("Cannot find 'to' app instance in database")?;
+        tx.next_message(app_id)?;
         Ok(tx.commit()?)
     }
 
     async fn handle_request(&mut self, request: Request) -> Result<Response, Box<dyn Error>> {
         match request {
-            Request::CreateAppInstance {label, manifest} => {
-                match self.create_app_instance(&label, &manifest) {
+            Request::CreateAppInstance {label} => {
+                match self.create_app(&label) {
                     Ok(uuid) => Ok(Response::CreateAppInstance {uuid}),
                     Err(err) => Ok(Response::Error {message: format!("{}", err)}),
                 }
             },
             Request::AppInstanceUuid {label} => {
-                match self.get_app_instance_uuid(&label) {
+                match self.get_app_uuid(&label) {
                     Ok(uuid) => Ok(Response::AppInstanceUuid {uuid}),
                     Err(err) => Ok(Response::Error {message: format!("{}", err)}),
                 }
@@ -301,20 +285,20 @@ impl Server {
                     invites: tx.list_message_invites()?,
                 })
             },
-            Request::MessageInvite {peer, app_instance_uuid} => {
-                self.send_message_invite(&peer, app_instance_uuid)?;
+            Request::MessageInvite {peer, app_uuid} => {
+                self.send_message_invite(&peer, app_uuid)?;
                 Ok(Response::Success)
             },
-            Request::MessageSend {peer, app_instance_uuid, from_app_instance_uuid, message} => {
-                self.send_message(peer, app_instance_uuid, from_app_instance_uuid, message)?;
+            Request::MessageSend {peer, app_uuid, from_app_uuid, message} => {
+                self.send_message(peer, app_uuid, from_app_uuid, message)?;
                 Ok(Response::Success)
             },
-            Request::MessageRead {app_instance_uuid} => {
-                let message = self.read_message(app_instance_uuid)?;
+            Request::MessageRead {app_uuid} => {
+                let message = self.read_message(app_uuid)?;
                 Ok(Response::Message {message})
             },
-            Request::MessageNext {app_instance_uuid} => {
-                self.next_message(app_instance_uuid)?;
+            Request::MessageNext {app_uuid} => {
+                self.next_message(app_uuid)?;
                 Ok(Response::Success)
             }
         }

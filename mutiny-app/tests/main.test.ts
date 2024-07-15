@@ -6,21 +6,21 @@ import { Server }from "../src/main.ts";
 const BASE_URL = "http://localhost:8000";
 const ROOT = join(import.meta.dirname as string, "www");
 
-const INSTANCE = {
+const APP = {
     uuid: "1234567890",
-    name: "Example app",
+    label: "Example app",
 };
 
 function makeServer(client: unknown) {
-    return new Server(client as MutinyClient, INSTANCE, ROOT);
+    return new Server(client as MutinyClient, APP, ROOT);
 }
 
 Deno.test("Get app instance information", async () => {
     const server = makeServer({});
-    const request = new Request(`${BASE_URL}/_api/v1/application_instance`);
+    const request = new Request(`${BASE_URL}/_api/v1/application`);
     const response = await server.handleRequest(request);
     const data = await response.json();
-    assertEquals(data, INSTANCE);
+    assertEquals(data, APP);
 });
 
 Deno.test("Get local peer id", async () => {
@@ -60,26 +60,26 @@ Deno.test("Send message invite", async () => {
         method: "POST",
         body: JSON.stringify({
             peer: "peer2", 
-            app_instance_uuid: "app2",
+            app_uuid: "app2",
         }),
     });
     const response = await server.handleRequest(request);
     const data = await response.json();
     assertEquals(data, {success: true});
-    assertEquals(calls, [["peer2", INSTANCE.uuid]]);
+    assertEquals(calls, [["peer2", APP.uuid]]);
 });
 
 Deno.test("List message invites", async () => {
     const invites = [
         {
             peer: "peer1",
-            app_instance_uuid: "app1",
+            app_uuid: "app1",
             manifest_id: "example.app.one",
             manifest_version: "1.1.1",
         },
         {
             peer: "peer2",
-            app_instance_uuid: "app2",
+            app_uuid: "app2",
             manifest_id: "example.app.two",
             manifest_version: "2.2.2",
         },
@@ -103,7 +103,7 @@ Deno.test("Read message (with message)", async () => {
     };
     const server = makeServer({
         messageRead(uuid: string) {
-            assertEquals(uuid, INSTANCE.uuid);
+            assertEquals(uuid, APP.uuid);
             return Promise.resolve(message);
         },
     });
@@ -120,7 +120,7 @@ Deno.test("Read message (with message)", async () => {
 Deno.test("Read message (with no message)", async () => {
     const server = makeServer({
         messageRead(uuid: string) {
-            assertEquals(uuid, INSTANCE.uuid);
+            assertEquals(uuid, APP.uuid);
             return Promise.resolve(null);
         },
     });
@@ -144,7 +144,7 @@ Deno.test("Next message", async () => {
     const response = await server.handleRequest(request);
     const data = await response.json();
     assertEquals(data, {success: true});
-    assertEquals(calls, [INSTANCE.uuid]);
+    assertEquals(calls, [APP.uuid]);
 });
 
 Deno.test("Unknown API path", async () => {

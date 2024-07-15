@@ -2,7 +2,7 @@
 import {Signaller} from "./lib/signaller.js";
 
 /** @typedef {{peer: string, uuid: string}} Invite */
-/** @typedef {{peer: string, app_instance_uuid: string}} AppInstance */
+/** @typedef {{peer: string, app_uuid: string}} AppInstance */
 /** @typedef {{message: string, from: AppInstance, to: AppInstance}} Message */
 
 export const local_peer_id = new Signaller(/** @type {null | string} */(null));

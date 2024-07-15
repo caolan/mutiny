@@ -45,18 +45,18 @@ export default class ChatSendMessageForm extends HTMLElement {
                 method: "POST",
                 body: JSON.stringify({
                     peer: selected_invite.value.peer,
-                    app_instance_uuid: selected_invite.value.app_instance_uuid,
+                    app_uuid: selected_invite.value.app_uuid,
                     message,
                 })
             });
             this.input.value = "";
             const from = {
                 peer: local_peer_id.value,
-                app_instance_uuid: local_app_uuid.value,
+                app_uuid: local_app_uuid.value,
             };
             const to = {
                 peer: selected_invite.value.peer,
-                app_instance_uuid: selected_invite.value.app_instance_uuid,
+                app_uuid: selected_invite.value.app_uuid,
             };
             appendMessage(from, to, message);
         }
