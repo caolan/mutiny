@@ -38,7 +38,7 @@ export default class ChatPeers extends HTMLElement {
             const ul = document.createElement('ul');
             for (const announcement  of announcements.value) {
                 const li = document.createElement('li');
-                li.textContent = announcement.peer;
+                li.textContent = announcement.data.nick || announcement.peer;
                 li.dataset.announcement = JSON.stringify(announcement);
                 ul.appendChild(li);
             }

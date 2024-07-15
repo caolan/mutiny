@@ -97,3 +97,11 @@ chat-message-history {
 #peers li::before {
     content: '👤 ';
 }
+
+#nick {
+    text-decoration: none;
+    color: white;
+}
+#nick:hover::before {
+    content: '✎ ' / 'Edit';
+}

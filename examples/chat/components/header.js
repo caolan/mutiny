@@ -1,30 +1,39 @@
+import {bind} from "../lib/events.js";
 import {watch} from "../lib/signaller.js";
-import {local_peer_id} from "../state.js";
+import {local_peer_id, nick} from "../state.js";
+import {askNick} from "../nick.js";
 
 export default class ChatHeader extends HTMLElement {
-    constructor() {
-        super();
-    }
-
     connectedCallback() {
-        const shadow = this.attachShadow({mode: "open"});
-        shadow.innerHTML = `
-            <link rel="stylesheet" href="style.css">
+        this.innerHTML = `
             <header>
                 <h1>Chat Example</h1>
-                <span id="local-peer-id"></span>
+                <a href="#" id="nick"></a>
             </header>
         `;
-        const setText = () => {
-            const span = shadow.getElementById('local-peer-id');
-            span.textContent = `You: ${local_peer_id.value}`;
-        };
-        setText();
-        this.stop = watch([local_peer_id], setText);
+        this.a = this.querySelector('#nick');
+        this.cleanup = [
+            watch([local_peer_id, nick], () => this.updateText()),
+            bind(this.a, 'click', ev => {
+                ev.preventDefault();
+                askNick();
+            }),
+        ];
+        this.updateText();
+    }
+
+    updateText() {
+        const text = nick.value || local_peer_id.value;
+        if (text) {
+            this.a.textContent = `You: ${text}`;
+            this.a.style.visibility = 'visible';
+        } else {
+            this.a.style.visibility = 'hidden';
+        }
     }
 
     disconnectedCallback() {
-        this.stop();
+        for (const destroy of this.cleanup) destroy();
     }
 }
 

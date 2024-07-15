@@ -1,5 +1,7 @@
 // @ts-check
 import * as state from "./state.js";
+import {watch} from "./lib/signaller.js";
+import {askNick} from "../nick.js";
 
 // Custom elements
 import "./components/header.js";
@@ -25,21 +27,42 @@ async function updatePeers() {
    const current = new Set(await res.json());
    // Announce app to newly discovered peers
    const new_peers = current.difference(state.peers.value);
-   const data = {};
-   for (const peer of new_peers) {
+   const data = {
+       id: 'mutiny.example.chat',
+       nick: state.nick.value,
+   };
+   announce(new_peers);
+   state.peers.value = current;
+}
+
+/** @param {Set<string>} peers */
+async function announce(peers) {
+   const data = {
+       id: 'mutiny.example.chat',
+       nick: state.nick.value,
+   };
+   for (const peer of peers) {
        await fetch("/_api/v1/announcements", {
            method: 'POST',
            body: JSON.stringify({peer, data}),
        });
    }
-   state.peers.value = current;
 }
 
 async function updateAnnouncements() {
    const res = await fetch("/_api/v1/announcements");
-   const data = /** @type {{peer: string, app_uuid: string, data: unknown}[]} */(await res.json());
-   // Only list announcements for peers in current discovered list
-   const new_announcements = data.filter(x => state.peers.value.has(x.peer));
+   const data = /** @type {import("../../lib/client.ts").AppAnnouncement[]} */(await res.json());
+   // Only list announcements for current app from peers in current discovered list
+   const new_announcements = data.filter(x => {
+       if (typeof x.data === 'object') {
+           return (
+               // @ts-ignore typescript doesn't detect that x.data is an object here
+               x.data.id === 'mutiny.example.chat' &&
+               state.peers.value.has(x.peer)
+           );
+       }
+       return false;
+   });
    // Update state only if announcements have changed
    if (JSON.stringify(new_announcements) !== JSON.stringify(state.announcements.value)) {
        state.announcements.value = new_announcements;
@@ -75,9 +98,18 @@ await updateLocalAppInstance();
 await updatePeers();
 await updateAnnouncements();
 
+// Update peers when nick changes
+watch([state.nick], updatePeers);
+
+// Announce again to all peers when nick changes
+watch([state.nick], () => announce(state.peers.value));
+
 // Start polling for messages
 getMessages();
 
 // Poll server for new peers and announcements
 setInterval(updatePeers, 2000);
 setInterval(updateAnnouncements, 2000);
+
+// Ask user for nickname
+askNick();
