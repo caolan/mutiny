@@ -11,9 +11,10 @@ pub enum Request {
     },
     LocalPeerId,
     Peers,
-    MessageInvite {
+    Announce {
         peer: String,
         app_uuid: String,
+        data: serde_json::Value,
     },
     MessageSend {
         peer: String,
@@ -28,7 +29,7 @@ pub enum Request {
     MessageNext {
         app_uuid: String,
     },
-    MessageInvites,
+    AppAnnouncements,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -53,8 +54,8 @@ pub enum Response {
     Message {
         message: Option<Message>,
     },
-    MessageInvites {
-        invites: Vec<MessageInvite>
+    AppAnnouncements {
+        announcements: Vec<AppAnnouncement>
     },
 }
 
@@ -67,7 +68,8 @@ pub struct Message {
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct MessageInvite {
+pub struct AppAnnouncement {
     pub peer: String,
     pub app_uuid: String,
+    pub data: serde_json::Value,
 }

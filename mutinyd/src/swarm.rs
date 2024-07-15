@@ -5,8 +5,9 @@ use std::error::Error;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Request {
-    Invite {
+    Announce {
         app_uuid: String,
+        data: serde_json::Value,
     },
     Message {
         from_app_uuid: String,

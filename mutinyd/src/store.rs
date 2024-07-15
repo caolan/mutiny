@@ -1,7 +1,7 @@
 use rusqlite::{self, params, Connection, Result, Transaction, OptionalExtension};
 use uuid::Uuid;
 
-use crate::protocol::{Message, MessageInvite};
+use crate::protocol::{Message, AppAnnouncement};
 
 pub struct Store {
     db: Connection,
@@ -123,6 +123,20 @@ impl<'a> StoreTransaction<'a> {
                          ALTER TABLE message_outbox RENAME from_app_instance_id TO from_app_id;
                          ALTER TABLE message_outbox RENAME to_app_instance_id TO to_app_id;
                          PRAGMA user_version = 2;"
+                    )?;
+                },
+                2 => {
+                    // Announce API
+                    println!("Migrating database to version 3");
+                    self.tx.execute_batch(
+                        "DROP TABLE message_allow;
+                         DROP TABLE message_invite;
+                         CREATE TABLE app_announcement (
+                             app_id INTEGER PRIMARY KEY REFERENCES app(id),
+                             received INTEGER NOT NULL,
+                             data TEXT NOT NULL
+                         );
+                         PRAGMA user_version = 3;"
                     )?;
                 },
                 _ => break,
@@ -280,47 +294,36 @@ impl<'a> StoreTransaction<'a> {
         self.prune_message_data()
     }
 
-    pub fn get_message_invite(&self, app_id: i64) -> Result<Option<i64>> {
+    pub fn list_app_announcements(&self) -> std::result::Result<Vec<AppAnnouncement>, Box<dyn std::error::Error>> {
         let mut stmt = self.tx.prepare_cached(
-            "SELECT id
-             FROM message_invite
-             WHERE app_id = ?1",
-        )?;
-        stmt.query_row([app_id], |row| row.get::<_, i64>(0)).optional()
-    }
-
-    pub fn list_message_invites(&self) -> Result<Vec<MessageInvite>> {
-        let mut stmt = self.tx.prepare_cached(
-            "SELECT peer.peer_id, uuid
-             FROM message_invite
+            "SELECT peer.peer_id, uuid, data
+             FROM app_announcement
              JOIN app ON app.id = app_id
              JOIN peer ON peer.id = app.peer_id",
         )?;
         let mut rows = stmt.query([])?;
         let mut results = Vec::new();
         while let Some(row) = rows.next()? {
-            results.push(MessageInvite {
+            let raw_data: String = row.get(2)?;
+            let data = serde_json::from_str(&raw_data)?;
+            results.push(AppAnnouncement {
                 peer: row.get(0)?,
                 app_uuid: row.get(1)?,
+                data,
             });
         }
         return Ok(results);
     }
 
-    pub fn put_message_invite(&self, received: i64, app_id: i64) -> Result<i64> {
+    // Note: serde_json::Value used for data argument to enforce valid JSON in db
+    pub fn set_app_announcement(&self, app_id: i64, received: i64, data: &serde_json::Value) -> Result<()> {
         let mut stmt = self.tx.prepare_cached(
-            "INSERT INTO message_invite (received, app_id)
-             VALUES (?1, ?2)
-             RETURNING id",
+            "INSERT INTO app_announcement (app_id, received, data)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT (app_id) DO UPDATE SET received=?2, data=?3",
         )?;
-        stmt.query_row([received, app_id], |row| row.get::<_, i64>(0))
-    }
-
-    pub fn get_or_put_message_invite(&self, received: i64, app_id: i64) -> Result<i64> {
-        if let Some(id) = self.get_message_invite(app_id)? {
-            return Ok(id);
-        }
-        self.put_message_invite(received, app_id)
+        stmt.execute(params![app_id, received, data.to_string()])?;
+        Ok(())
     }
 
     pub fn read_message(&self, app_id: i64) -> Result<Option<Message>> {

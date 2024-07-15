@@ -1,6 +1,6 @@
 import {watch} from "../lib/signaller.js";
 import {delegate} from "../lib/events.js";
-import {invites, selected_invite} from "../state.js";
+import {announcements, selected_announcement} from "../state.js";
 
 export default class ChatPeers extends HTMLElement {
     constructor() {
@@ -15,10 +15,10 @@ export default class ChatPeers extends HTMLElement {
         `;
         this.peers = this.shadow.getElementById('peers');
         this.cleanup = [
-            watch([invites], () => this.updatePeers()),
-            watch([selected_invite], () => this.updateSelected()),
+            watch([announcements], () => this.updatePeers()),
+            watch([selected_announcement], () => this.updateSelected()),
             delegate(this.peers, "click", "#peers li", function () {
-                selected_invite.value = JSON.parse(this.dataset.invite);
+                selected_announcement.value = JSON.parse(this.dataset.announcement);
             }),
         ];
         this.updatePeers();
@@ -30,16 +30,16 @@ export default class ChatPeers extends HTMLElement {
 
     updatePeers() {
         this.peers.innerHTML = '';
-        if (invites.value.length === 0) {
+        if (announcements.value.length === 0) {
             const span = document.createElement('span');
             span.textContent = "No peers discovered yet";
             this.peers.appendChild(span);
         } else {
             const ul = document.createElement('ul');
-            for (const invite of invites.value) {
+            for (const announcement  of announcements.value) {
                 const li = document.createElement('li');
-                li.textContent = invite.peer;
-                li.dataset.invite = JSON.stringify(invite);
+                li.textContent = announcement.peer;
+                li.dataset.announcement = JSON.stringify(announcement);
                 ul.appendChild(li);
             }
             this.peers.appendChild(ul);
@@ -48,9 +48,9 @@ export default class ChatPeers extends HTMLElement {
     }
 
     updateSelected() {
-        const json = JSON.stringify(selected_invite.value);
+        const json = JSON.stringify(selected_announcement.value);
         for (const li of this.peers.querySelectorAll("li")) {
-            if (li.dataset.invite === json) {
+            if (li.dataset.announcement === json) {
                 li.classList.add("active");
             } else {
                 li.classList.remove("active");

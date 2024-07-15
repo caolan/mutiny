@@ -1,6 +1,6 @@
 import {bind} from "../lib/events.js";
 import {watch} from "../lib/signaller.js";
-import {appendMessage, local_peer_id, local_app_uuid, selected_invite} from "../state.js";
+import {appendMessage, local_peer_id, local_app_uuid, selected_announcement} from "../state.js";
 
 export default class ChatSendMessageForm extends HTMLElement {
     constructor() {
@@ -20,7 +20,7 @@ export default class ChatSendMessageForm extends HTMLElement {
         this.input = this.shadow.querySelector('[name=message]');
         this.cleanup = [
             bind(this.form, 'submit', ev => this.submit(ev)),
-            watch([selected_invite], () => this.updateVisibility()),
+            watch([selected_announcement], () => this.updateVisibility()),
         ];
     }
 
@@ -29,7 +29,7 @@ export default class ChatSendMessageForm extends HTMLElement {
     }
 
     updateVisibility() {
-        if (selected_invite.value) {
+        if (selected_announcement.value) {
             this.form.style.display = 'flex';
             this.input.focus();
         } else {
@@ -39,13 +39,13 @@ export default class ChatSendMessageForm extends HTMLElement {
 
     async submit(ev) {
         ev.preventDefault();
-        if (selected_invite.value && local_peer_id.value && local_app_uuid.value) {
+        if (selected_announcement.value && local_peer_id.value && local_app_uuid.value) {
             const message = this.input.value;
             await fetch("/_api/v1/message_send", {
                 method: "POST",
                 body: JSON.stringify({
-                    peer: selected_invite.value.peer,
-                    app_uuid: selected_invite.value.app_uuid,
+                    peer: selected_announcement.value.peer,
+                    app_uuid: selected_announcement.value.app_uuid,
                     message,
                 })
             });
@@ -55,8 +55,8 @@ export default class ChatSendMessageForm extends HTMLElement {
                 app_uuid: local_app_uuid.value,
             };
             const to = {
-                peer: selected_invite.value.peer,
-                app_uuid: selected_invite.value.app_uuid,
+                peer: selected_announcement.value.peer,
+                app_uuid: selected_announcement.value.app_uuid,
             };
             appendMessage(from, to, message);
         }

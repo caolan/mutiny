@@ -53,18 +53,19 @@ export type Message = {
     message: Uint8Array,
 };
 
-export type MessageInvite = {
+export type AppAnnouncement = {
     peer: string, 
     app_uuid: string,
+    data: unknown,
 };
 
 type MutinyRequest = {type: "LocalPeerId"}
     | {type: "Peers"}
-    | {type: "Invites"}
+    | {type: "AppAnnouncements"}
     | {type: "AppInstanceUuid", label: string}
     | {type: "CreateAppInstance", label: string}
-    | {type: "MessageInvite", peer: string, app_uuid: string}
-    | {type: "MessageInvites"}
+    | {type: "Announce", peer: string, app_uuid: string, data: unknown}
+    | {type: "AppAnnouncements"}
     | {
         type: "MessageSend", 
         peer: string,
@@ -83,7 +84,7 @@ type MutinyResponse = {type: "Success"}
     | {type: "AppInstanceUuid", uuid: string | null}
     | {type: "CreateAppInstance", uuid: string}
     | {type: "Message", message: null | Message}
-    | {type: "MessageInvites",  invites: MessageInvite[]}
+    | {type: "AppAnnouncements",  announcements: AppAnnouncement[]}
     ;
 
 export class MutinyClient {
@@ -170,16 +171,16 @@ export class MutinyClient {
         return response.uuid;
     }
 
-    async messageInvite(peer: string, app_uuid: string): Promise<void> {
-        const response = await this.request({type: "MessageInvite", peer, app_uuid});
+    async announce(peer: string, app_uuid: string, data: unknown): Promise<void> {
+        const response = await this.request({type: "Announce", peer, app_uuid, data});
         assert(response.type === 'Success');
         return;
     }
 
-    async messageInvites(): Promise<MessageInvite[]> {
-        const response = await this.request({type: "MessageInvites"});
-        assert(response.type === 'MessageInvites');
-        return response.invites;
+    async announcements(): Promise<AppAnnouncement[]> {
+        const response = await this.request({type: "AppAnnouncements"});
+        assert(response.type === 'AppAnnouncements');
+        return response.announcements;
     }
 
     async messageSend(
@@ -210,10 +211,4 @@ export class MutinyClient {
         assert(response.type === 'Success');
         return;
     }
-
-    // async invites(): Promise<{id: string, addr: string}[]> {
-    //     const response = await this.request({type: "Invites"});
-    //     assert(response.type === 'Invites');
-    //     return response.invites;
-    // }
 }

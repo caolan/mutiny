@@ -95,9 +95,9 @@ impl Server {
         let tx = self.store.transaction()?;
         let peer_id = tx.get_or_put_peer(&peer.to_base58())?;
         match request {
-            swarm::Request::Invite { app_uuid } => {
+            swarm::Request::Announce { app_uuid, data } => {
                 let app = tx.get_or_put_app(peer_id, &app_uuid)?;
-                tx.get_or_put_message_invite(received, app)?;
+                tx.set_app_announcement(app, received, &data)?;
             },
             swarm::Request::Message {
                 from_app_uuid,
@@ -213,10 +213,11 @@ impl Server {
         Ok(None)
     }
 
-    fn send_message_invite(&mut self, to_peer: &str, uuid: String) -> Result<(), Box<dyn Error>> {
+    fn send_announce(&mut self, to_peer: &str, app_uuid: String, data: serde_json::Value) -> Result<(), Box<dyn Error>> {
         let peer: PeerId = to_peer.parse()?;
-        self.swarm.behaviour_mut().request_response.send_request(&peer, swarm::Request::Invite {
-            app_uuid: uuid,
+        self.swarm.behaviour_mut().request_response.send_request(&peer, swarm::Request::Announce {
+            app_uuid,
+            data,
         });
         Ok(())
     }
@@ -279,14 +280,14 @@ impl Server {
                 }
                 Ok(Response::Peers {peers})
             },
-            Request::MessageInvites => {
+            Request::AppAnnouncements => {
                 let tx = self.store.transaction()?;
-                Ok(Response::MessageInvites {
-                    invites: tx.list_message_invites()?,
+                Ok(Response::AppAnnouncements {
+                    announcements: tx.list_app_announcements()?,
                 })
             },
-            Request::MessageInvite {peer, app_uuid} => {
-                self.send_message_invite(&peer, app_uuid)?;
+            Request::Announce {peer, app_uuid, data} => {
+                self.send_announce(&peer, app_uuid, data)?;
                 Ok(Response::Success)
             },
             Request::MessageSend {peer, app_uuid, from_app_uuid, message} => {

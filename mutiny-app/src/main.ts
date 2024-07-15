@@ -26,24 +26,27 @@ export class Server {
             return new Response(await this.client.localPeerId());
         } else if (pathname === '/_api/v1/peers') {
             return new Response(JSON.stringify(await this.client.peers()));
-        } else if (request.method === 'POST' && pathname === '/_api/v1/message_invite') {
-            const data = await request.json();
-            await this.client.messageInvite(
-                data.peer,
-                this.app.uuid,
-            );
-            return new Response(JSON.stringify({success: true}));
         } else if (request.method === 'POST' && pathname === '/_api/v1/message_send') {
-            const data = await request.json();
-            const message = new TextEncoder().encode(data.message);
+            const body = await request.json();
+            const message = new TextEncoder().encode(body.message);
             return new Response(JSON.stringify(await this.client.messageSend(
-                data.peer,
-                data.app_uuid,
+                body.peer,
+                body.app_uuid,
                 this.app.uuid,
                 message,
             )));
-        } else if (pathname === '/_api/v1/message_invites') {
-            return new Response(JSON.stringify(await this.client.messageInvites()));
+        } else if (pathname === '/_api/v1/announcements') {
+            if (request.method === 'POST') {
+                const body = await request.json();
+                await this.client.announce(
+                    body.peer,
+                    this.app.uuid,
+                    body.data,
+                );
+                return new Response(JSON.stringify({success: true}));
+            } else {
+                return new Response(JSON.stringify(await this.client.announcements()));
+            }
         } else if (pathname === '/_api/v1/message_read') {
             const m = await this.client.messageRead(this.app.uuid) as Message;
             return new Response(JSON.stringify(m && {

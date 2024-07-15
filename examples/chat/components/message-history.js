@@ -1,5 +1,5 @@
 import {watch} from "../lib/signaller.js";
-import {local_peer_id, selected_invite, messages} from "../state.js";
+import {local_peer_id, selected_announcement, messages} from "../state.js";
 
 export default class ChatMessageHistory extends HTMLElement {
     constructor() {
@@ -13,7 +13,7 @@ export default class ChatMessageHistory extends HTMLElement {
             <pre id="message-history"></pre>
         `;
         this.history = this.shadow.getElementById('message-history');
-        this.stop = watch([local_peer_id, selected_invite, messages], () => {
+        this.stop = watch([local_peer_id, selected_announcement, messages], () => {
             this.updateMessages();
         });
         this.updateMessages();
@@ -25,15 +25,15 @@ export default class ChatMessageHistory extends HTMLElement {
 
     updateMessages() {
         let txt = "";
-        if (selected_invite.value) {
+        if (selected_announcement.value) {
             for (const msg of messages.value) {
                 const match_from = (
-                    msg.from.peer === selected_invite.value.peer &&
-                    msg.from.app_uuid === selected_invite.value.app_uuid
+                    msg.from.peer === selected_announcement.value.peer &&
+                    msg.from.app_uuid === selected_announcement.value.app_uuid
                 );
                 const match_to = (
-                    msg.to.peer === selected_invite.value.peer &&
-                    msg.to.app_uuid === selected_invite.value.app_uuid
+                    msg.to.peer === selected_announcement.value.peer &&
+                    msg.to.app_uuid === selected_announcement.value.app_uuid
                 );
                 if (match_from || match_to) {
                     const from = msg.from.peer === local_peer_id.value ? 'You' : msg.from.peer;
