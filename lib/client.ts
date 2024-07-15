@@ -47,6 +47,10 @@ export async function connect({socket_path}: ConnectOptions): Promise<MutinyClie
     return new MutinyClient(conn);
 }
 
+interface JsonObject { [name: string]: JsonValue }
+interface JsonArray extends Array<JsonValue> { }
+type JsonValue = (null | boolean | number | string | JsonObject | JsonArray);
+
 export type Message = {
     peer: string,
     uuid: string,
@@ -56,7 +60,7 @@ export type Message = {
 export type AppAnnouncement = {
     peer: string, 
     app_uuid: string,
-    data: unknown,
+    data: JsonValue,
 };
 
 type MutinyRequest = {type: "LocalPeerId"}
@@ -64,7 +68,7 @@ type MutinyRequest = {type: "LocalPeerId"}
     | {type: "AppAnnouncements"}
     | {type: "AppInstanceUuid", label: string}
     | {type: "CreateAppInstance", label: string}
-    | {type: "Announce", peer: string, app_uuid: string, data: unknown}
+    | {type: "Announce", peer: string, app_uuid: string, data: JsonValue}
     | {type: "AppAnnouncements"}
     | {
         type: "MessageSend", 
@@ -171,7 +175,7 @@ export class MutinyClient {
         return response.uuid;
     }
 
-    async announce(peer: string, app_uuid: string, data: unknown): Promise<void> {
+    async announce(peer: string, app_uuid: string, data: JsonValue): Promise<void> {
         const response = await this.request({type: "Announce", peer, app_uuid, data});
         assert(response.type === 'Success');
         return;

@@ -48,51 +48,56 @@ Deno.test("Get peers list", async () => {
     assertEquals(data, peers);
 });
 
-Deno.test("Send message invite", async () => {
-    const calls: [string, string][] = [];
+Deno.test("Send app announcement", async () => {
+    const calls: [string, string, unknown][] = [];
     const server = makeServer({
-        messageInvite(peer: string, uuid: string) {
-            calls.push([peer, uuid]);
+        announce(peer: string, uuid: string, data: unknown) {
+            calls.push([peer, uuid, data]);
             return Promise.resolve(undefined);
         },
     });
-    const request = new Request(`${BASE_URL}/_api/v1/message_invite`, {
+    const request = new Request(`${BASE_URL}/_api/v1/announcements`, {
         method: "POST",
         body: JSON.stringify({
             peer: "peer2", 
             app_uuid: "app2",
+            data: "example data",
         }),
     });
     const response = await server.handleRequest(request);
     const data = await response.json();
     assertEquals(data, {success: true});
-    assertEquals(calls, [["peer2", APP.uuid]]);
+    assertEquals(calls, [["peer2", APP.uuid, "example data"]]);
 });
 
-Deno.test("List message invites", async () => {
-    const invites = [
+Deno.test("List app announcements", async () => {
+    const announcements = [
         {
             peer: "peer1",
             app_uuid: "app1",
-            manifest_id: "example.app.one",
-            manifest_version: "1.1.1",
+            data: {
+                id: "example.app.one",
+                version: "1.1.1",
+            }
         },
         {
             peer: "peer2",
             app_uuid: "app2",
-            manifest_id: "example.app.two",
-            manifest_version: "2.2.2",
+            data: {
+                id: "example.app.two",
+                version: "2.2.2",
+            }
         },
     ];
     const server = makeServer({
-        messageInvites() {
-            return Promise.resolve(invites);
+        announcements() {
+            return Promise.resolve(announcements);
         },
     });
-    const request = new Request(`${BASE_URL}/_api/v1/message_invites`);
+    const request = new Request(`${BASE_URL}/_api/v1/announcements`);
     const response = await server.handleRequest(request);
     const data = await response.json();
-    assertEquals(data, invites);
+    assertEquals(data, announcements);
 });
 
 Deno.test("Read message (with message)", async () => {

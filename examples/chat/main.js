@@ -37,7 +37,7 @@ async function updatePeers() {
 
 async function updateAnnouncements() {
    const res = await fetch("/_api/v1/announcements");
-   const data = /** @type {{peer: string, uuid: string}[]} */(await res.json());
+   const data = /** @type {{peer: string, app_uuid: string, data: unknown}[]} */(await res.json());
    // Only list announcements for peers in current discovered list
    const new_announcements = data.filter(x => state.peers.value.has(x.peer));
    // Update state only if announcements have changed
