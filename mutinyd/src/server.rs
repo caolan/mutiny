@@ -16,6 +16,7 @@ pub struct Server {
     swarm: Swarm,
     listener: UnixListener,
     peer_subscribers: HashMap<usize, mpsc::Sender<ResponseBody>>,
+    announce_subscribers: HashMap<usize, mpsc::Sender<ResponseBody>>,
     client_request_receiver: mpsc::Receiver<ClientRequest>,
     client_request_sender: mpsc::Sender<ClientRequest>,
     peers: HashSet<(PeerId, Multiaddr)>,
@@ -31,6 +32,7 @@ impl Server {
         let mut server = Self {
             listener: UnixListener::bind(config.socket_path.as_path())?,
             peer_subscribers: HashMap::new(),
+            announce_subscribers: HashMap::new(),
             swarm: swarm::start(config.keypair).await?,
             client_request_receiver: rx,
             client_request_sender: tx,
@@ -74,10 +76,10 @@ impl Server {
         tokio::spawn(client.start());
     }
 
-    fn swarm_message(&mut self, peer_id: libp2p::PeerId, message: swarm::Message) -> Result<(), Box<dyn Error>> {
+    async fn swarm_message(&mut self, peer_id: libp2p::PeerId, message: swarm::Message) -> Result<(), Box<dyn Error>> {
         match message {
             swarm::Message::Request {request_id, request, channel} => {
-                self.swarm_request(peer_id, request_id, request, channel)
+                self.swarm_request(peer_id, request_id, request, channel).await
             },
             swarm::Message::Response {request_id, response} => {
                 self.swarm_response(peer_id, request_id, response)
@@ -85,7 +87,7 @@ impl Server {
         }
     }
 
-    fn swarm_request(
+    async fn swarm_request(
         &mut self,
         peer: libp2p::PeerId,
         _request_id: InboundRequestId,
@@ -100,6 +102,12 @@ impl Server {
             swarm::Request::Announce { app_uuid, data } => {
                 let app = tx.get_or_put_app(peer_id, &app_uuid)?;
                 tx.set_app_announcement(app, received, &data)?;
+                tx.commit()?;
+                self.announce_subscribers_send(ResponseBody::AppAnnouncement {
+                    peer: peer.to_base58(),
+                    app_uuid,
+                    data,
+                }).await;
             },
             swarm::Request::Message {
                 from_app_uuid,
@@ -111,13 +119,14 @@ impl Server {
                 let to = tx.get_app(local_peer_id, &to_app_uuid)?.ok_or("Cannot find 'to' app in database")?;
                 let message_id = tx.get_or_put_message_data(&message)?;
                 tx.put_message_inbox(received, from, to, message_id)?;
+                tx.commit()?;
             },
         }
         let _ = self.swarm.behaviour_mut().request_response.send_response(
             channel,
             swarm::Response::Acknowledge,
         );
-        Ok(tx.commit()?)
+        Ok(())
     }
 
     fn swarm_response(
@@ -152,6 +161,20 @@ impl Server {
         }
     }
 
+    async fn announce_subscribers_send(&mut self, message: ResponseBody) -> () {
+        let mut to_remove: Vec<usize> = vec![];
+        for (request_id, sender) in &self.announce_subscribers {
+            if let Err(err) = sender.send(message.clone()).await {
+                eprintln!("Error sending message to announce event subscriber: {}", err);
+                // Remove this subscriber
+                to_remove.push(*request_id);
+            }
+        }
+        for request_id in to_remove {
+            self.announce_subscribers.remove(&request_id);
+        }
+    }
+
     async fn swarm_event(&mut self, event: SwarmEvent<MutinyBehaviourEvent>) -> Result<(), Box<dyn Error>> {
         match event {
             SwarmEvent::Behaviour(swarm::MutinyBehaviourEvent::Mdns(ev)) => match ev {
@@ -176,7 +199,7 @@ impl Server {
             },
             SwarmEvent::Behaviour(swarm::MutinyBehaviourEvent::RequestResponse(ev)) => match ev {
                 request_response::Event::Message {peer, message} => {
-                    self.swarm_message(peer, message)?;
+                    self.swarm_message(peer, message).await?;
                 },
                 _ => {},
                 // request_response::Event::OutboundFailure {peer, request_id, error} => {
@@ -324,6 +347,9 @@ impl Server {
             },
             RequestBody::SubscribePeerEvents => {
                 self.peer_subscribers.insert(request.request.id, request.response);
+            },
+            RequestBody::SubscribeAnnounceEvents => {
+                self.announce_subscribers.insert(request.request.id, request.response);
             }
         }
         Ok(())

@@ -1,6 +1,6 @@
 import {watch} from "../lib/signaller.js";
 import {delegate} from "../lib/events.js";
-import {announcements, selected_announcement} from "../state.js";
+import {peers, announcements, selected_announcement} from "../state.js";
 
 export default class ChatPeers extends HTMLElement {
     constructor() {
@@ -15,7 +15,7 @@ export default class ChatPeers extends HTMLElement {
         `;
         this.peers = this.shadow.getElementById('peers');
         this.cleanup = [
-            watch([announcements], () => this.updatePeers()),
+            watch([peers, announcements], () => this.updatePeers()),
             watch([selected_announcement], () => this.updateSelected()),
             delegate(this.peers, "click", "#peers li", function () {
                 selected_announcement.value = JSON.parse(this.dataset.announcement);
@@ -36,11 +36,14 @@ export default class ChatPeers extends HTMLElement {
             this.peers.appendChild(span);
         } else {
             const ul = document.createElement('ul');
-            for (const announcement  of announcements.value) {
-                const li = document.createElement('li');
-                li.textContent = announcement.data.nick || announcement.peer;
-                li.dataset.announcement = JSON.stringify(announcement);
-                ul.appendChild(li);
+            for (const announcement of announcements.value) {
+                // Only show app announcements from known peers
+                if (peers.value.has(announcement.peer)) {
+                    const li = document.createElement('li');
+                    li.textContent = announcement.data.nick || announcement.peer;
+                    li.dataset.announcement = JSON.stringify(announcement);
+                    ul.appendChild(li);
+                }
             }
             this.peers.appendChild(ul);
         }

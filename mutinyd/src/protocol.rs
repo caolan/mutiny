@@ -37,6 +37,7 @@ pub enum RequestBody {
     },
     AppAnnouncements,
     SubscribePeerEvents,
+    SubscribeAnnounceEvents,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -75,6 +76,11 @@ pub enum ResponseBody {
     },
     AppAnnouncements {
         announcements: Vec<AppAnnouncement>
+    },
+    AppAnnouncement {
+        peer: String,
+        app_uuid: String,
+        data: serde_json::Value,
     },
 }
 

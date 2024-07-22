@@ -41,24 +41,17 @@ async function announce(peers) {
    }
 }
 
-async function updateAnnouncements() {
+async function fetchAnnouncements() {
    const res = await fetch("/_api/v1/announcements");
    const data = /** @type {import("../../lib/client.ts").AppAnnouncement[]} */(await res.json());
    // Only list announcements for current app from peers in current discovered list
-   const new_announcements = data.filter(x => {
+   return data.filter(x => {
        if (typeof x.data === 'object') {
-           return (
-               // @ts-ignore typescript doesn't detect that x.data is an object here
-               x.data.id === 'mutiny.example.chat' &&
-               state.peers.value.has(x.peer)
-           );
+           // @ts-ignore typescript doesn't detect that x.data is an object here
+           return x.data.id === 'mutiny.example.chat';
        }
        return false;
    });
-   // Update state only if announcements have changed
-   if (JSON.stringify(new_announcements) !== JSON.stringify(state.announcements.value)) {
-       state.announcements.value = new_announcements;
-   }
 }
 
 async function getMessages() {
@@ -87,8 +80,7 @@ async function getMessages() {
 // Initialize example app
 await updateLocalPeerId();
 await updateLocalAppInstance();
-await updateAnnouncements();
-
+state.announcements.value = await fetchAnnouncements();
 state.peers.value = await fetchPeers();
 
 // Announce app to newly discovered peers
@@ -100,21 +92,30 @@ watch([state.nick], () => announce(state.peers.value));
 // Start polling for messages
 getMessages();
 
-// Poll server for new announcements
-setInterval(updateAnnouncements, 2000);
-
 // Ask user for nickname
 askNick();
 
-// Subscribe to server-sent peer events
-const source = new EventSource("/_api/v1/peers/events");
-source.addEventListener("PeerDiscovered", peer_id => {
+// Subscribe to server-sent events
+const peer_events = new EventSource("/_api/v1/peers/events");
+peer_events.addEventListener("PeerDiscovered", peer_id => {
     console.log('Peer discovered', peer_id);
     state.peers.value.add(peer_id);
     state.peers.signal();
 });
-source.addEventListener("PeerExpired", peer_id => {
+peer_events.addEventListener("PeerExpired", peer_id => {
     console.log('Peer expired', peer_id);
     state.peers.value.delete(peer_id);
     state.peers.signal();
+});
+
+const announcement_events = new EventSource("/_api/v1/announcements/events");
+announcement_events.addEventListener("AppAnnouncement", event => {
+    const announcement = JSON.parse(event.data);
+    console.log('App announced', announcement);
+    state.announcements.value = state.announcements.value.map(x => {
+        if (x.peer === announcement.peer || x.app_uuid === announcement.app_uuid) {
+            return announcement;
+        }
+        return x;
+    });
 });
