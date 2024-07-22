@@ -190,8 +190,8 @@ impl Server {
             Ok(response) => response,
             Err(err) => ResponseBody::Error {message: format!("{}", err)},
         };
-        // ignore response failures, it means the client is gone
-        let _ = request.response.send(response);
+        // ignore response failures, the client is probably gone
+        let _ = request.response.send(response).await;
         Ok(())
     }
 

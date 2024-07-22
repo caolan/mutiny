@@ -25,16 +25,19 @@ impl RequestHandler {
             request: request.body,
             response: tx,
         }).await;
+        println!("Request sent for handling");
         if let Err(err) = result {
             eprintln!("Error sending client request for handling: {}", err);
             return;
         }
         while let Some(body) = rx.recv().await {
+            println!("Response body received from handler {:?}", body);
             if let Err(err) = self.responses_tx.send(Response {request_id, body}).await {
                 eprintln!("Error queuing response for client: {}", err);
                 return;
             }
         }
+        println!("Request handler stopped {}", request_id);
     }
 }
 
@@ -63,6 +66,7 @@ impl<Reader: AsyncReadExt + Unpin, Writer: AsyncWrite + AsyncWriteExt + Unpin> C
     }
 
     async fn write_response(&mut self, response: Response) -> Result<(), ClientError> {
+        println!("Writing response {:?}", response);
         // The rmp_serde::Serializer is not async and can not write
         // directly to an AsyncWrite, write to a buffer first.
         let mut serialized = Vec::<u8>::new();
@@ -75,6 +79,7 @@ impl<Reader: AsyncReadExt + Unpin, Writer: AsyncWrite + AsyncWriteExt + Unpin> C
     }
 
     fn spawn_request_handler(&mut self, request: Request, responses_tx: mpsc::Sender<Response>) {
+        println!("Spawning request handler for {:?}", request);
         let handler = RequestHandler {
             request_sender: self.request_sender.clone(),
             responses_tx: responses_tx.clone(),
