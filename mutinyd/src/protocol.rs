@@ -1,8 +1,14 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct Request {
+    pub id: usize,
+    pub body: RequestBody,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag="type")]
-pub enum Request {
+pub enum RequestBody {
     CreateAppInstance {
         label: String,
     },
@@ -33,8 +39,14 @@ pub enum Request {
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct Response {
+    pub request_id: usize,
+    pub body: ResponseBody,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag="type")]
-pub enum Response {
+pub enum ResponseBody {
     Success,
     Error {
         message: String,

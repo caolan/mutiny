@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::swarm::{self, Swarm, MutinyBehaviourEvent};
 use crate::config::Config;
-use crate::protocol::{Request, Response, Message};
+use crate::protocol::{RequestBody, ResponseBody, Message};
 use crate::client::{create_client, ClientRequest};
 use crate::store::Store;
 
@@ -188,7 +188,7 @@ impl Server {
     async fn client_request(&mut self, request: ClientRequest) -> Result<(), Box<dyn Error>> {
         let response = match self.handle_request(request.request).await {
             Ok(response) => response,
-            Err(err) => Response::Error {message: format!("{}", err)},
+            Err(err) => ResponseBody::Error {message: format!("{}", err)},
         };
         // ignore response failures, it means the client is gone
         let _ = request.response.send(response);
@@ -256,51 +256,51 @@ impl Server {
         Ok(tx.commit()?)
     }
 
-    async fn handle_request(&mut self, request: Request) -> Result<Response, Box<dyn Error>> {
+    async fn handle_request(&mut self, request: RequestBody) -> Result<ResponseBody, Box<dyn Error>> {
         match request {
-            Request::CreateAppInstance {label} => {
+            RequestBody::CreateAppInstance {label} => {
                 match self.create_app(&label) {
-                    Ok(uuid) => Ok(Response::CreateAppInstance {uuid}),
-                    Err(err) => Ok(Response::Error {message: format!("{}", err)}),
+                    Ok(uuid) => Ok(ResponseBody::CreateAppInstance {uuid}),
+                    Err(err) => Ok(ResponseBody::Error {message: format!("{}", err)}),
                 }
             },
-            Request::AppInstanceUuid {label} => {
+            RequestBody::AppInstanceUuid {label} => {
                 match self.get_app_uuid(&label) {
-                    Ok(uuid) => Ok(Response::AppInstanceUuid {uuid}),
-                    Err(err) => Ok(Response::Error {message: format!("{}", err)}),
+                    Ok(uuid) => Ok(ResponseBody::AppInstanceUuid {uuid}),
+                    Err(err) => Ok(ResponseBody::Error {message: format!("{}", err)}),
                 }
             },
-            Request::LocalPeerId => Ok(Response::LocalPeerId {
+            RequestBody::LocalPeerId => Ok(ResponseBody::LocalPeerId {
                 peer_id: self.swarm.local_peer_id().to_base58()
             }),
-            Request::Peers => {
+            RequestBody::Peers => {
                 let mut peers: Vec<String> = Vec::new();
                 for (id, _addr) in self.peers.iter() {
                     peers.push(id.to_base58());
                 }
-                Ok(Response::Peers {peers})
+                Ok(ResponseBody::Peers {peers})
             },
-            Request::AppAnnouncements => {
+            RequestBody::AppAnnouncements => {
                 let tx = self.store.transaction()?;
-                Ok(Response::AppAnnouncements {
+                Ok(ResponseBody::AppAnnouncements {
                     announcements: tx.list_app_announcements()?,
                 })
             },
-            Request::Announce {peer, app_uuid, data} => {
+            RequestBody::Announce {peer, app_uuid, data} => {
                 self.send_announce(&peer, app_uuid, data)?;
-                Ok(Response::Success)
+                Ok(ResponseBody::Success)
             },
-            Request::MessageSend {peer, app_uuid, from_app_uuid, message} => {
+            RequestBody::MessageSend {peer, app_uuid, from_app_uuid, message} => {
                 self.send_message(peer, app_uuid, from_app_uuid, message)?;
-                Ok(Response::Success)
+                Ok(ResponseBody::Success)
             },
-            Request::MessageRead {app_uuid} => {
+            RequestBody::MessageRead {app_uuid} => {
                 let message = self.read_message(app_uuid)?;
-                Ok(Response::Message {message})
+                Ok(ResponseBody::Message {message})
             },
-            Request::MessageNext {app_uuid} => {
+            RequestBody::MessageNext {app_uuid} => {
                 self.next_message(app_uuid)?;
-                Ok(Response::Success)
+                Ok(ResponseBody::Success)
             }
         }
     }
