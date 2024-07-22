@@ -63,11 +63,11 @@ export type AppAnnouncement = {
     data: JsonValue,
 };
 
-type MutinyRequest = {
+export type MutinyRequest = {
     id: number,
     body: MutinyRequestBody,
 };
-type MutinyRequestBody = {type: "LocalPeerId"}
+export type MutinyRequestBody = {type: "LocalPeerId"}
     | {type: "Peers"}
     | {type: "AppAnnouncements"}
     | {type: "AppInstanceUuid", label: string}
@@ -84,17 +84,25 @@ type MutinyRequestBody = {type: "LocalPeerId"}
     | {type: "MessageRead", app_uuid: string}
     | {type: "MessageNext", app_uuid: string}
     | {type: "SubscribePeerEvents"}
+    | {type: "SubscribeAnnounceEvents"}
     ;
 
-type MutinyResponse = {
+export type MutinyResponse = {
     request_id: number,
     body: MutinyResponseBody,
 };
 
-type PeerEvent = {type: "PeerDiscovered", peer_id: string}
+export type PeerEvent = {type: "PeerDiscovered", peer_id: string}
     | {type: "PeerExpired", peer_id: string};
 
-type MutinyResponseBody = {type: "Success"} 
+export type AnnounceEvent = {
+    type: "AppAnnouncement",
+    peer: string, 
+    app_uuid: string,
+    data: JsonValue,
+};
+
+export type MutinyResponseBody = {type: "Success"} 
     | {type: "Error", message: string}
     | {type: "LocalPeerId", peer_id: string}
     | {type: "Peers", peers: string[]}
@@ -218,10 +226,8 @@ export class MutinyClient {
         return response.peers;
     }
 
-    peerEvents(): AsyncIterableIterator<PeerEvent> {
+    private _subscribe<R>(request: MutinyRequest): AsyncIterableIterator<R> {
         const waiting = this.waiting;
-        const body: MutinyRequestBody = {type: "SubscribePeerEvents"};
-        const request = {id: this.next_request_id++, body};
         let promise: Promise<MutinyResponseBody> = this.queueRequest(request);
         return {
             [Symbol.asyncIterator]() {
@@ -242,9 +248,21 @@ export class MutinyClient {
                 }) as Promise<MutinyResponseBody>;
                 // Start dispatching responses (if not already)
                 this.queueDispatchResponses();
-                return {value: value as PeerEvent};
+                return {value: value as R};
             }
         };
+    }
+
+    peerEvents(): AsyncIterableIterator<PeerEvent> {
+        const body: MutinyRequestBody = {type: "SubscribePeerEvents"};
+        const request = {id: this.next_request_id++, body};
+        return this._subscribe(request);
+    }
+
+    announceEvents(): AsyncIterableIterator<AnnounceEvent> {
+        const body: MutinyRequestBody = {type: "SubscribeAnnounceEvents"};
+        const request = {id: this.next_request_id++, body};
+        return this._subscribe(request);
     }
 
     async appInstanceUuid(label: string): Promise<string | null> {

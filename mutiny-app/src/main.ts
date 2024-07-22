@@ -1,6 +1,34 @@
-import { connect, defaultSocketPath, MutinyClient, Message } from "../../lib/client.ts";
+import { connect, defaultSocketPath, MutinyClient, PeerEvent, Message, AnnounceEvent } from "../../lib/client.ts";
 import { parseArgs } from "@std/cli/parse-args";
 import { serveDir } from "@std/http";
+
+function eventStream<T>(iter: AsyncIterableIterator<T>, map: (event: T) => [string, string]) {
+    let stop = false;
+    const body = new ReadableStream({
+        start(controller) {
+            (async () => {
+                const encoder = new TextEncoder();
+                for await (const event of iter) {
+                    if (stop) break;
+                    const [name, data] = map(event);
+                    controller.enqueue(
+                        encoder.encode(
+                            `event: ${name}\r\ndata: ${data}\r\n\r\n`
+                        )
+                    );
+                }
+            })();
+        },
+        cancel() {
+            stop = true;
+        }
+    });
+    return new Response(body, {
+        headers: {
+            'Content-Type': 'text/event-stream',
+        }
+    });
+}
 
 export class Server {
     constructor (
@@ -27,30 +55,8 @@ export class Server {
         } else if (pathname === '/_api/v1/peers') {
             return new Response(JSON.stringify(await this.client.peers()));
         } else if (pathname === '/_api/v1/peers/events') {
-            let stop = false;
-            const client = this.client;
-            const body = new ReadableStream({
-                start(controller) {
-                    (async () => {
-                        const encoder = new TextEncoder();
-                        for await (const event of client.peerEvents()) {
-                            if (stop) break;
-                            controller.enqueue(
-                                encoder.encode(
-                                    `event: ${event.type}\r\ndata: ${event.peer_id}\r\n\r\n`
-                                )
-                            );
-                        }
-                    })();
-                },
-                cancel() {
-                    stop = true;
-                }
-            });
-            return new Response(body, {
-                headers: {
-                    'Content-Type': 'text/event-stream',
-                }
+            return eventStream(this.client.peerEvents(), event => {
+                return [event.type, event.peer_id];
             });
         } else if (request.method === 'POST' && pathname === '/_api/v1/message_send') {
             const body = await request.json();
@@ -73,6 +79,14 @@ export class Server {
             } else {
                 return new Response(JSON.stringify(await this.client.announcements()));
             }
+        } else if (pathname === '/_api/v1/announcements/events') {
+            return eventStream(this.client.announceEvents(), event => {
+                return [event.type, JSON.stringify({
+                    peer: event.peer, 
+                    app_uuid: event.app_uuid,
+                    data: event.data,
+                })];
+            });
         } else if (pathname === '/_api/v1/message_read') {
             const m = await this.client.messageRead(this.app.uuid) as Message;
             return new Response(JSON.stringify(m && {
