@@ -1,18 +1,47 @@
-use tokio::io::{AsyncBufRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
-use tokio::sync::{oneshot, mpsc};
+use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::sync::mpsc;
 use tokio::net::UnixStream;
 use serde::Serialize;
 use rmp_serde::Serializer;
 use error_set::error_set;
 
-use crate::protocol::{Request, Response};
+use crate::protocol::{Request, RequestBody, Response, ResponseBody};
 
 pub struct ClientRequest {
-    pub request: Request,
-    pub response: oneshot::Sender<Response>,
+    pub request: RequestBody,
+    pub response: mpsc::Sender<ResponseBody>,
 }
 
-pub struct Client<Reader: AsyncBufRead + AsyncReadExt + Unpin, Writer: AsyncWrite + AsyncWriteExt + Unpin> {
+struct RequestHandler {
+    pub request_sender: mpsc::Sender<ClientRequest>,
+    pub responses_tx: mpsc::Sender<Response>,
+}
+
+impl RequestHandler {
+    async fn start(self, request: Request) -> () {
+        let (tx, mut rx) = mpsc::channel(100);
+        let request_id = request.id;
+        let result = self.request_sender.send(ClientRequest {
+            request: request.body,
+            response: tx,
+        }).await;
+        println!("Request sent for handling");
+        if let Err(err) = result {
+            eprintln!("Error sending client request for handling: {}", err);
+            return;
+        }
+        while let Some(body) = rx.recv().await {
+            println!("Response body received from handler {:?}", body);
+            if let Err(err) = self.responses_tx.send(Response {request_id, body}).await {
+                eprintln!("Error queuing response for client: {}", err);
+                return;
+            }
+        }
+        println!("Request handler stopped {}", request_id);
+    }
+}
+
+pub struct Client<Reader: AsyncReadExt + Unpin, Writer: AsyncWrite + AsyncWriteExt + Unpin> {
     request_sender: mpsc::Sender<ClientRequest>,
     reader: Reader,
     writer: Writer,
@@ -24,12 +53,11 @@ error_set! {
         DecodeRequestError(rmp_serde::decode::Error),
         EncodeResponseError(rmp_serde::encode::Error),
         ReadLengthError(std::num::TryFromIntError),
-        ReadResponseError(oneshot::error::RecvError),
         SendRequestError(mpsc::error::SendError<ClientRequest>),
     };
 }
 
-impl<Reader: AsyncBufRead + AsyncReadExt + Unpin, Writer: AsyncWrite + AsyncWriteExt + Unpin> Client<Reader, Writer> {
+impl<Reader: AsyncReadExt + Unpin, Writer: AsyncWrite + AsyncWriteExt + Unpin> Client<Reader, Writer> {
     async fn read_request(&mut self) -> Result<Request, ClientError> {
         let length = self.reader.read_u32().await?;
         let mut buf = vec![0; length as usize];
@@ -38,6 +66,7 @@ impl<Reader: AsyncBufRead + AsyncReadExt + Unpin, Writer: AsyncWrite + AsyncWrit
     }
 
     async fn write_response(&mut self, response: Response) -> Result<(), ClientError> {
+        println!("Writing response {:?}", response);
         // The rmp_serde::Serializer is not async and can not write
         // directly to an AsyncWrite, write to a buffer first.
         let mut serialized = Vec::<u8>::new();
@@ -49,31 +78,62 @@ impl<Reader: AsyncBufRead + AsyncReadExt + Unpin, Writer: AsyncWrite + AsyncWrit
         Ok(())
     }
 
-    async fn handle_next_request(&mut self) -> Result<(), ClientError> {
-        let request = self.read_request().await?;
-        let (tx, rx) = oneshot::channel();
-        self.request_sender.send(ClientRequest {
-            request: request,
-            response: tx,
-        }).await?;
-        let response = rx.await?;
-        self.write_response(response).await?;
-        Ok(())
+    fn spawn_request_handler(&mut self, request: Request, responses_tx: mpsc::Sender<Response>) {
+        println!("Spawning request handler for {:?}", request);
+        let handler = RequestHandler {
+            request_sender: self.request_sender.clone(),
+            responses_tx: responses_tx.clone(),
+        };
+        tokio::spawn(handler.start(request));
     }
 
+    // TODO: split into separate read requests / write response loops
     pub async fn start(mut self) -> () {
+        let (responses_tx, mut responses_rx) = mpsc::channel(100);
         loop {
-            if let Err(err) = self.handle_next_request().await {
-                if let ClientError::IoError(e) = err {
-                    if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                        // Client disconnected
-                        break
+            tokio::select! {
+                req = self.read_request() => {
+                    match req {
+                        Ok(request) => {
+                            self.spawn_request_handler(request, responses_tx.clone());
+                        },
+                        Err(err) => {
+                            if let ClientError::IoError(e) = err {
+                                if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                                    // Client disconnected
+                                    return;
+                                }
+                            } else {
+                                // Invalid request, disconnect client
+                                eprintln!("Invalid request: {}", err);
+                                if let Err(e) = self.writer.shutdown().await {
+                                    eprintln!("Failed to shutdown client writer: {}", e);
+                                }
+                                return;
+                            }
+                        },
                     }
-                    panic!("{:?}", e);
-                } else {
-                    self.write_response(Response::Error {
-                        message: format!("{:?}", err),
-                    }).await.expect("Send error response");
+                },
+                res = responses_rx.recv() => {
+                    match res {
+                        Some(response) => {
+                            if let Err(err) = self.write_response(response).await {
+                                if let ClientError::IoError(e) = err {
+                                    if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                                        // Client disconnected
+                                        return;
+                                    }
+                                } else {
+                                    eprintln!("Error sending response: {}", err);
+                                    if let Err(e) = self.writer.shutdown().await {
+                                        eprintln!("Failed to shutdown client writer: {}", e);
+                                    }
+                                    return;
+                                }
+                            }
+                        },
+                        None => break,
+                    }
                 }
             }
         }
@@ -85,16 +145,18 @@ pub fn create_client(
     request_sender: mpsc::Sender<ClientRequest>,
 ) -> Client<BufReader<tokio::net::unix::OwnedReadHalf>, tokio::net::unix::OwnedWriteHalf> {
     let (reader, writer) = stream.into_split();
-    Client {
+    return Client {
         request_sender,
         reader: BufReader::new(reader),
         writer,
-    }
+    };
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol::RequestBody;
+    use tokio::time::{timeout, sleep, Duration};
 
     #[tokio::test]
     async fn decode_request_and_send_over_channel() {
@@ -105,7 +167,7 @@ mod tests {
 
             // Serialize request
             let mut serialized = Vec::<u8>::new();
-            Request::LocalPeerId.serialize(
+            Request { id: 1, body: RequestBody::LocalPeerId }.serialize(
                 &mut Serializer::new(&mut serialized).with_struct_map()
             ).unwrap();
             let len = u32::try_from(serialized.len()).unwrap();
@@ -123,43 +185,43 @@ mod tests {
         });
         let message = rx.recv().await.unwrap();
         handle.abort();
-        assert_eq!(message.request, Request::LocalPeerId);
+        assert_eq!(message.request, RequestBody::LocalPeerId);
     }
 
     #[tokio::test]
     async fn receive_from_channel_and_write_serialized_response() {
-        // Use temporary file so we can read it later without having to
-        // manage ownership over a vector.
-        let path = std::env::temp_dir().join("mutiny-response.tmp");
-        let response = tokio::fs::File::create(&path).await.unwrap();
-
+        let (response_writer, mut response_reader) = tokio::io::duplex(64);
         let (tx, mut rx) = mpsc::channel(100);
+
         let handle = tokio::spawn(async move {
-            let mut request = Vec::new();
+            let (mut request_writer, request_reader) = tokio::io::duplex(64);
 
             // Serialize request
             let mut serialized = Vec::<u8>::new();
-            Request::LocalPeerId.serialize(
+            Request {id: 2, body: RequestBody::LocalPeerId }.serialize(
                 &mut Serializer::new(&mut serialized).with_struct_map()
             ).unwrap();
             let len = u32::try_from(serialized.len()).unwrap();
             // Write message length
-            request.write_all(&len.to_be_bytes()).await.unwrap();
+            request_writer.write_all(&len.to_be_bytes()).await.unwrap();
             // Write serialized message
-            request.write_all(&serialized).await.unwrap();
+            request_writer.write_all(&serialized).await.unwrap();
 
             let client = Client {
                 request_sender: tx,
-                reader: request.as_slice(),
-                writer: response,
+                reader: request_reader,
+                writer: response_writer,
             };
             client.start().await;
         });
 
         let message = rx.recv().await.unwrap();
-        assert_eq!(message.request, Request::LocalPeerId);
-        let res = Response::LocalPeerId {
-            peer_id: String::from("peer123")
+        assert_eq!(message.request, RequestBody::LocalPeerId);
+        let res = Response {
+            request_id: 2,
+            body: ResponseBody::LocalPeerId {
+                peer_id: String::from("peer123")
+            },
         };
         // Serialize response
         let mut serialized = Vec::<u8>::new();
@@ -173,13 +235,119 @@ mod tests {
         // Write serialized message
         expected.write_all(&serialized).await.unwrap();
         // Send to client task
-        message.response.send(res).unwrap();
+        message.response.send(res.body).await.unwrap();
 
-        // Give the client task chance to write the response
-        tokio::time::sleep(std::time::Duration::from_millis(0)).await;
-        assert_eq!(tokio::fs::read(&path).await.unwrap(), expected);
+        // Read the response
+        let mut actual = vec![0; expected.len()];
+        timeout(
+            Duration::from_millis(1000),
+            response_reader.read_exact(&mut actual)
+        ).await.unwrap().unwrap();
+        assert_eq!(actual, expected);
 
         handle.abort();
-        tokio::fs::remove_file(&path).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn handle_concurrent_requests() {
+        let (response_writer, mut response_reader) = tokio::io::duplex(64);
+        let (tx, mut rx) = mpsc::channel(100);
+
+        let handle = tokio::spawn(async move {
+            let (mut request_writer, request_reader) = tokio::io::duplex(64);
+
+            tokio::spawn(async move {
+                // Write multiple requests without waiting for a response
+                let to_send = [
+                    Request {id: 1, body: RequestBody::LocalPeerId },
+                    Request {id: 2, body: RequestBody::Peers },
+                ];
+                for msg in to_send {
+                    // Serialize request
+                    let mut serialized = Vec::<u8>::new();
+                    msg.serialize(
+                        &mut Serializer::new(&mut serialized).with_struct_map()
+                    ).unwrap();
+                    let len = u32::try_from(serialized.len()).unwrap();
+                    // Write message length
+                    request_writer.write_all(&len.to_be_bytes()).await.unwrap();
+                    // Write serialized message
+                    request_writer.write_all(&serialized).await.unwrap();
+                    // Delay before sending next message
+                    sleep(Duration::from_millis(100)).await;
+                }
+            });
+
+            let client = Client {
+                request_sender: tx,
+                reader: request_reader,
+                writer: response_writer,
+            };
+            client.start().await;
+        });
+
+        // Read first request
+        let message1 = timeout(Duration::from_millis(1000), rx.recv()).await.unwrap().unwrap();
+        assert_eq!(message1.request, RequestBody::LocalPeerId);
+
+        // Read second request
+        let message2 = timeout(Duration::from_millis(1000), rx.recv()).await.unwrap().unwrap();
+        assert_eq!(message2.request, RequestBody::Peers);
+
+        // Vector to hold expected serialized response data
+        let mut expected = Vec::new();
+
+        // Respond to second request
+        {
+            let res = Response {
+                request_id: 2,
+                body: ResponseBody::Peers {
+                    peers: vec![String::from("peer2")],
+                },
+            };
+            // Serialize response
+            let mut serialized = Vec::<u8>::new();
+            res.serialize(
+                &mut Serializer::new(&mut serialized).with_struct_map()
+            ).unwrap();
+            let len = u32::try_from(serialized.len()).unwrap();
+            // Write message length
+            expected.write_all(&len.to_be_bytes()).await.unwrap();
+            // Write serialized message
+            expected.write_all(&serialized).await.unwrap();
+            // Send to client task
+            message2.response.send(res.body).await.unwrap();
+        }
+        // Respond to first request
+        {
+            let res = Response {
+                request_id: 1,
+                body: ResponseBody::LocalPeerId {
+                    peer_id: String::from("peer1"),
+                },
+            };
+            // Serialize response
+            let mut serialized = Vec::<u8>::new();
+            res.serialize(
+                &mut Serializer::new(&mut serialized).with_struct_map()
+            ).unwrap();
+            let len = u32::try_from(serialized.len()).unwrap();
+            // Write message length
+            expected.write_all(&len.to_be_bytes()).await.unwrap();
+            // Write serialized message
+            expected.write_all(&serialized).await.unwrap();
+            // Send to client task
+            message1.response.send(res.body).await.unwrap();
+        }
+
+        // Read the responses
+        let mut actual = vec![0; expected.len()];
+        timeout(
+            Duration::from_millis(1000),
+            response_reader.read_exact(&mut actual)
+        ).await.unwrap().unwrap();
+        assert_eq!(actual, expected);
+
+        handle.abort();
     }
 }

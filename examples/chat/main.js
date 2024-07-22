@@ -27,10 +27,6 @@ async function updatePeers() {
    const current = new Set(await res.json());
    // Announce app to newly discovered peers
    const new_peers = current.difference(state.peers.value);
-   const data = {
-       id: 'mutiny.example.chat',
-       nick: state.nick.value,
-   };
    announce(new_peers);
    state.peers.value = current;
 }
