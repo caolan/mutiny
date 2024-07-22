@@ -1,4 +1,4 @@
-import { connect, defaultSocketPath, MutinyClient, PeerEvent, Message, AnnounceEvent } from "../../lib/client.ts";
+import { connect, defaultSocketPath, MutinyClient, Message } from "../../lib/client.ts";
 import { parseArgs } from "@std/cli/parse-args";
 import { serveDir } from "@std/http";
 
