@@ -22,13 +22,9 @@ async function updateLocalAppInstance() {
     state.local_app_uuid.value = data.uuid;
 }
 
-async function updatePeers() {
+async function fetchPeers() {
    const res = await fetch("/_api/v1/peers");
-   const current = new Set(await res.json());
-   // Announce app to newly discovered peers
-   const new_peers = current.difference(state.peers.value);
-   announce(new_peers);
-   state.peers.value = current;
+   return new Set(await res.json());
 }
 
 /** @param {Set<string>} peers */
@@ -91,21 +87,34 @@ async function getMessages() {
 // Initialize example app
 await updateLocalPeerId();
 await updateLocalAppInstance();
-await updatePeers();
 await updateAnnouncements();
 
-// Update peers when nick changes
-watch([state.nick], updatePeers);
+state.peers.value = await fetchPeers();
 
-// Announce again to all peers when nick changes
+// Announce app to newly discovered peers
+announce(state.peers.value);
+
+// Announce to all peers when nick changes
 watch([state.nick], () => announce(state.peers.value));
 
 // Start polling for messages
 getMessages();
 
-// Poll server for new peers and announcements
-setInterval(updatePeers, 2000);
+// Poll server for new announcements
 setInterval(updateAnnouncements, 2000);
 
 // Ask user for nickname
 askNick();
+
+// Subscribe to server-sent peer events
+const source = new EventSource("/_api/v1/peers/events");
+source.addEventListener("PeerDiscovered", peer_id => {
+    console.log('Peer discovered', peer_id);
+    state.peers.value.add(peer_id);
+    state.peers.signal();
+});
+source.addEventListener("PeerExpired", peer_id => {
+    console.log('Peer expired', peer_id);
+    state.peers.value.delete(peer_id);
+    state.peers.signal();
+});

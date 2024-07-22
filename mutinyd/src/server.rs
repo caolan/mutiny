@@ -15,6 +15,7 @@ use crate::store::Store;
 pub struct Server {
     swarm: Swarm,
     listener: UnixListener,
+    peer_subscribers: HashMap<usize, mpsc::Sender<ResponseBody>>,
     client_request_receiver: mpsc::Receiver<ClientRequest>,
     client_request_sender: mpsc::Sender<ClientRequest>,
     peers: HashSet<(PeerId, Multiaddr)>,
@@ -29,6 +30,7 @@ impl Server {
         let (tx, rx) = mpsc::channel(100);
         let mut server = Self {
             listener: UnixListener::bind(config.socket_path.as_path())?,
+            peer_subscribers: HashMap::new(),
             swarm: swarm::start(config.keypair).await?,
             client_request_receiver: rx,
             client_request_sender: tx,
@@ -59,7 +61,7 @@ impl Server {
                     self.spawn_client(connection.unwrap()).await;
                 },
                 client_request = self.client_request_receiver.recv() => {
-                    self.client_request(client_request.unwrap()).await.unwrap();
+                    self.client_request(client_request.unwrap()).await;
                 },
                 _signal = signal::ctrl_c() => break,
             }
@@ -136,6 +138,20 @@ impl Server {
         Ok(tx.commit()?)
     }
 
+    async fn peer_subscribers_send(&mut self, message: ResponseBody) -> () {
+        let mut to_remove: Vec<usize> = vec![];
+        for (request_id, sender) in &self.peer_subscribers {
+            if let Err(err) = sender.send(message.clone()).await {
+                eprintln!("Error sending message to peer event subscriber: {}", err);
+                // Remove this subscriber
+                to_remove.push(*request_id);
+            }
+        }
+        for request_id in to_remove {
+            self.peer_subscribers.remove(&request_id);
+        }
+    }
+
     async fn swarm_event(&mut self, event: SwarmEvent<MutinyBehaviourEvent>) -> Result<(), Box<dyn Error>> {
         match event {
             SwarmEvent::Behaviour(swarm::MutinyBehaviourEvent::Mdns(ev)) => match ev {
@@ -143,12 +159,18 @@ impl Server {
                     for (peer_id, multiaddr) in list {
                         println!("mDNS discovered a new peer: {peer_id}");
                         self.peers.insert((peer_id, multiaddr));
+                        self.peer_subscribers_send(ResponseBody::PeerDiscovered {
+                            peer_id: peer_id.to_base58(),
+                        }).await;
                     }
                 },
                 mdns::Event::Expired(list) => {
                     for (peer_id, multiaddr) in list {
                         println!("mDNS discover peer has expired: {peer_id}");
                         self.peers.remove(&(peer_id, multiaddr));
+                        self.peer_subscribers_send(ResponseBody::PeerExpired {
+                            peer_id: peer_id.to_base58(),
+                        }).await;
                     }
                 },
             },
@@ -185,14 +207,14 @@ impl Server {
         Ok(())
     }
 
-    async fn client_request(&mut self, request: ClientRequest) -> Result<(), Box<dyn Error>> {
-        let response = match self.handle_request(request.request).await {
-            Ok(response) => response,
-            Err(err) => ResponseBody::Error {message: format!("{}", err)},
-        };
-        // ignore response failures, the client is probably gone
-        let _ = request.response.send(response).await;
-        Ok(())
+    async fn client_request(&mut self, request: ClientRequest) {
+        let sender = request.response.clone();
+        if let Err(err) = self.handle_request(request).await {
+            // ignore response failures, the client might be gone
+            let _ = sender.send(ResponseBody::Error {
+                message: format!("{}", err),
+            }).await;
+        }
     }
 
     fn create_app(&mut self, label: &str) -> Result<String, Box<dyn Error>> {
@@ -256,52 +278,54 @@ impl Server {
         Ok(tx.commit()?)
     }
 
-    async fn handle_request(&mut self, request: RequestBody) -> Result<ResponseBody, Box<dyn Error>> {
-        match request {
+    async fn handle_request(&mut self, request: ClientRequest) -> Result<(), Box<dyn Error>> {
+        match request.request.body {
             RequestBody::CreateAppInstance {label} => {
-                match self.create_app(&label) {
-                    Ok(uuid) => Ok(ResponseBody::CreateAppInstance {uuid}),
-                    Err(err) => Ok(ResponseBody::Error {message: format!("{}", err)}),
-                }
+                let uuid = self.create_app(&label)?;
+                let _ = request.response.send(ResponseBody::CreateAppInstance {uuid}).await;
             },
             RequestBody::AppInstanceUuid {label} => {
-                match self.get_app_uuid(&label) {
-                    Ok(uuid) => Ok(ResponseBody::AppInstanceUuid {uuid}),
-                    Err(err) => Ok(ResponseBody::Error {message: format!("{}", err)}),
-                }
+                let uuid = self.get_app_uuid(&label)?;
+                let _ = request.response.send(ResponseBody::AppInstanceUuid {uuid}).await;
             },
-            RequestBody::LocalPeerId => Ok(ResponseBody::LocalPeerId {
-                peer_id: self.swarm.local_peer_id().to_base58()
-            }),
+            RequestBody::LocalPeerId => {
+                let _ = request.response.send(ResponseBody::LocalPeerId {
+                    peer_id: self.swarm.local_peer_id().to_base58()
+                }).await;
+            },
             RequestBody::Peers => {
                 let mut peers: Vec<String> = Vec::new();
                 for (id, _addr) in self.peers.iter() {
                     peers.push(id.to_base58());
                 }
-                Ok(ResponseBody::Peers {peers})
+                let _ = request.response.send(ResponseBody::Peers {peers}).await;
             },
             RequestBody::AppAnnouncements => {
                 let tx = self.store.transaction()?;
-                Ok(ResponseBody::AppAnnouncements {
+                let _ = request.response.send(ResponseBody::AppAnnouncements {
                     announcements: tx.list_app_announcements()?,
-                })
+                }).await;
             },
             RequestBody::Announce {peer, app_uuid, data} => {
                 self.send_announce(&peer, app_uuid, data)?;
-                Ok(ResponseBody::Success)
+                let _ = request.response.send(ResponseBody::Success).await;
             },
             RequestBody::MessageSend {peer, app_uuid, from_app_uuid, message} => {
                 self.send_message(peer, app_uuid, from_app_uuid, message)?;
-                Ok(ResponseBody::Success)
+                let _ = request.response.send(ResponseBody::Success).await;
             },
             RequestBody::MessageRead {app_uuid} => {
                 let message = self.read_message(app_uuid)?;
-                Ok(ResponseBody::Message {message})
+                let _ = request.response.send(ResponseBody::Message {message}).await;
             },
             RequestBody::MessageNext {app_uuid} => {
                 self.next_message(app_uuid)?;
-                Ok(ResponseBody::Success)
+                let _ = request.response.send(ResponseBody::Success).await;
+            },
+            RequestBody::SubscribePeerEvents => {
+                self.peer_subscribers.insert(request.request.id, request.response);
             }
         }
+        Ok(())
     }
 }
