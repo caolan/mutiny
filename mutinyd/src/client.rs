@@ -5,10 +5,10 @@ use serde::Serialize;
 use rmp_serde::Serializer;
 use error_set::error_set;
 
-use crate::protocol::{Request, RequestBody, Response, ResponseBody};
+use crate::protocol::{Request, Response, ResponseBody};
 
 pub struct ClientRequest {
-    pub request: RequestBody,
+    pub request: Request,
     pub response: mpsc::Sender<ResponseBody>,
 }
 
@@ -22,7 +22,7 @@ impl RequestHandler {
         let (tx, mut rx) = mpsc::channel(100);
         let request_id = request.id;
         let result = self.request_sender.send(ClientRequest {
-            request: request.body,
+            request: request,
             response: tx,
         }).await;
         println!("Request sent for handling");
@@ -185,7 +185,10 @@ mod tests {
         });
         let message = rx.recv().await.unwrap();
         handle.abort();
-        assert_eq!(message.request, RequestBody::LocalPeerId);
+        assert_eq!(message.request, Request {
+            id: 1,
+            body: RequestBody::LocalPeerId,
+        });
     }
 
     #[tokio::test]
@@ -216,7 +219,10 @@ mod tests {
         });
 
         let message = rx.recv().await.unwrap();
-        assert_eq!(message.request, RequestBody::LocalPeerId);
+        assert_eq!(message.request, Request {
+            id: 2,
+            body: RequestBody::LocalPeerId,
+        });
         let res = Response {
             request_id: 2,
             body: ResponseBody::LocalPeerId {
@@ -288,11 +294,17 @@ mod tests {
 
         // Read first request
         let message1 = timeout(Duration::from_millis(1000), rx.recv()).await.unwrap().unwrap();
-        assert_eq!(message1.request, RequestBody::LocalPeerId);
+        assert_eq!(message1.request, Request {
+            id: 1,
+            body: RequestBody::LocalPeerId,
+        });
 
         // Read second request
         let message2 = timeout(Duration::from_millis(1000), rx.recv()).await.unwrap().unwrap();
-        assert_eq!(message2.request, RequestBody::Peers);
+        assert_eq!(message2.request, Request {
+            id: 2,
+            body: RequestBody::Peers,
+        });
 
         // Vector to hold expected serialized response data
         let mut expected = Vec::new();

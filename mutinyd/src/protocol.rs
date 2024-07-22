@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Request {
     pub id: usize,
     pub body: RequestBody,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(tag="type")]
 pub enum RequestBody {
     CreateAppInstance {
@@ -36,20 +36,27 @@ pub enum RequestBody {
         app_uuid: String,
     },
     AppAnnouncements,
+    SubscribePeerEvents,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Response {
     pub request_id: usize,
     pub body: ResponseBody,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(tag="type")]
 pub enum ResponseBody {
     Success,
     Error {
         message: String,
+    },
+    PeerDiscovered {
+        peer_id: String
+    },
+    PeerExpired {
+        peer_id: String
     },
     CreateAppInstance {
         uuid: String
@@ -71,7 +78,7 @@ pub enum ResponseBody {
     },
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Message {
     pub peer: String,
     pub uuid: String,
@@ -79,7 +86,7 @@ pub struct Message {
     pub message: Vec<u8>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct AppAnnouncement {
     pub peer: String,
     pub app_uuid: String,

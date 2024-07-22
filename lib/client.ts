@@ -83,12 +83,17 @@ type MutinyRequestBody = {type: "LocalPeerId"}
     }
     | {type: "MessageRead", app_uuid: string}
     | {type: "MessageNext", app_uuid: string}
+    | {type: "SubscribePeerEvents"}
     ;
 
 type MutinyResponse = {
     request_id: number,
     body: MutinyResponseBody,
 };
+
+type PeerEvent = {type: "PeerDiscovered", peer_id: string}
+    | {type: "PeerExpired", peer_id: string};
+
 type MutinyResponseBody = {type: "Success"} 
     | {type: "Error", message: string}
     | {type: "LocalPeerId", peer_id: string}
@@ -97,6 +102,7 @@ type MutinyResponseBody = {type: "Success"}
     | {type: "CreateAppInstance", uuid: string}
     | {type: "Message", message: null | Message}
     | {type: "AppAnnouncements",  announcements: AppAnnouncement[]}
+    | PeerEvent
     ;
 
 export class MutinyClient {
@@ -173,16 +179,24 @@ export class MutinyClient {
         this.queued.push(request);
 
         // Start sending queued requests (if not already)
-        if (!this.sending_requests) {
-            this.sending_requests = true;
-            queueMicrotask(() => this.sendRequests());
-        }
+        this.queueSendingRequests();
         // Start dispatching responses (if not already)
+        this.queueDispatchResponses();
+        return promise;
+    }
+
+    queueDispatchResponses() {
         if (!this.dispatching_responses) {
             this.dispatching_responses = true;
             queueMicrotask(() => this.dispatchResponses());
         }
-        return promise;
+    }
+
+    queueSendingRequests() {
+        if (!this.sending_requests) {
+            this.sending_requests = true;
+            queueMicrotask(() => this.sendRequests());
+        }
     }
 
     private async requestOne(body: MutinyRequestBody): Promise<MutinyResponseBody> {
@@ -202,6 +216,35 @@ export class MutinyClient {
         const response = await this.requestOne({type: "Peers"});
         assert(response.type === 'Peers');
         return response.peers;
+    }
+
+    peerEvents(): AsyncIterableIterator<PeerEvent> {
+        const waiting = this.waiting;
+        const body: MutinyRequestBody = {type: "SubscribePeerEvents"};
+        const request = {id: this.next_request_id++, body};
+        let promise: Promise<MutinyResponseBody> = this.queueRequest(request);
+        return {
+            [Symbol.asyncIterator]() {
+                return this;
+            },
+            return(value?: PeerEvent) {
+                console.log('peerEvents iterator return()');
+                // Remove waiting promise
+                waiting.delete(request.id);
+                return Promise.resolve({value, done: true});
+            },
+            next: async () => {
+                console.log('peerEvents iterator next()');
+                const value = await promise;
+                // Register next promise
+                promise = new Promise((resolve, reject) => {
+                    waiting.set(request.id, {resolve, reject});
+                }) as Promise<MutinyResponseBody>;
+                // Start dispatching responses (if not already)
+                this.queueDispatchResponses();
+                return {value: value as PeerEvent};
+            }
+        };
     }
 
     async appInstanceUuid(label: string): Promise<string | null> {

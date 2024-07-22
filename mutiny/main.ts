@@ -9,4 +9,8 @@ if (import.meta.main) {
     ]);
     console.log(peer_id);
     console.log(peers);
+
+    for await (const event of client.peerEvents()) {
+        console.log(event);
+    }
 }

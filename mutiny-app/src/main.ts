@@ -26,6 +26,32 @@ export class Server {
             return new Response(await this.client.localPeerId());
         } else if (pathname === '/_api/v1/peers') {
             return new Response(JSON.stringify(await this.client.peers()));
+        } else if (pathname === '/_api/v1/peers/events') {
+            let stop = false;
+            const client = this.client;
+            const body = new ReadableStream({
+                start(controller) {
+                    (async () => {
+                        const encoder = new TextEncoder();
+                        for await (const event of client.peerEvents()) {
+                            if (stop) break;
+                            controller.enqueue(
+                                encoder.encode(
+                                    `event: ${event.type}\r\ndata: ${event.peer_id}\r\n\r\n`
+                                )
+                            );
+                        }
+                    })();
+                },
+                cancel() {
+                    stop = true;
+                }
+            });
+            return new Response(body, {
+                headers: {
+                    'Content-Type': 'text/event-stream',
+                }
+            });
         } else if (request.method === 'POST' && pathname === '/_api/v1/message_send') {
             const body = await request.json();
             const message = new TextEncoder().encode(body.message);
