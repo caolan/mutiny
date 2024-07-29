@@ -330,7 +330,24 @@ impl Server {
                 }).await;
             },
             RequestBody::Announce {peer, app_uuid, data} => {
-                self.send_announce(&peer, app_uuid, data)?;
+                // If the announce is directed at local peer just write directly to database
+                if peer.eq(&self.peer_id.to_base58()) {
+                    // Can't store u64 timestamp directly in sqlite, would have to store as blob
+                    let received: i64 = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs().try_into()?;
+                    let tx = self.store.transaction()?;
+                    let peer_id = tx.get_or_put_peer(&peer)?;
+                    let app = tx.get_or_put_app(peer_id, &app_uuid)?;
+                    tx.set_app_announcement(app, received, &data)?;
+                    tx.commit()?;
+                    self.announce_subscribers_send(ResponseBody::AppAnnouncement {
+                        peer,
+                        app_uuid,
+                        data,
+                    }).await;
+                } else {
+                    // Else if announce is directed at another peer, send libp2p request
+                    self.send_announce(&peer, app_uuid, data)?;
+                }
                 let _ = request.response.send(ResponseBody::Success).await;
             },
             RequestBody::MessageSend {peer, app_uuid, from_app_uuid, message} => {
