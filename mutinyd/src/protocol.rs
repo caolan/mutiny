@@ -86,6 +86,7 @@ pub enum ResponseBody {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Message {
+    pub id: usize,
     pub peer: String,
     pub uuid: String,
     #[serde(with = "serde_bytes")]

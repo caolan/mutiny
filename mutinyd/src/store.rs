@@ -328,7 +328,7 @@ impl<'a> StoreTransaction<'a> {
 
     pub fn read_message(&self, app_id: i64) -> Result<Option<Message>> {
         let mut stmt = self.tx.prepare_cached(
-            "SELECT peer.peer_id, app.uuid, data
+            "SELECT message_inbox.id, peer.peer_id, app.uuid, data
              FROM message_inbox
              JOIN message_data ON message_data.id = message_id
              JOIN app ON app.id = from_app_id
@@ -339,9 +339,10 @@ impl<'a> StoreTransaction<'a> {
         )?;
         stmt.query_row([app_id], |row| {
             Ok(Message {
-                peer: row.get::<_, String>(0)?,
-                uuid: row.get::<_, String>(1)?,
-                message: row.get::<_, Vec<u8>>(2)?,
+                id: row.get::<_, usize>(0)?,
+                peer: row.get::<_, String>(1)?,
+                uuid: row.get::<_, String>(2)?,
+                message: row.get::<_, Vec<u8>>(3)?,
             })
         }).optional()
     }

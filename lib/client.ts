@@ -52,6 +52,7 @@ interface JsonArray extends Array<JsonValue> { }
 type JsonValue = (null | boolean | number | string | JsonObject | JsonArray);
 
 export type Message = {
+    id: number,
     peer: string,
     uuid: string,
     message: Uint8Array,
