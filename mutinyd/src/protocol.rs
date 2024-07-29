@@ -22,22 +22,26 @@ pub enum RequestBody {
         app_uuid: String,
         data: serde_json::Value,
     },
-    MessageSend {
+    SendMessage {
         peer: String,
         app_uuid: String,
         from_app_uuid: String,
         #[serde(with = "serde_bytes")]
         message: Vec<u8>,
     },
-    MessageRead {
+    InboxMessages {
         app_uuid: String,
     },
-    MessageNext {
+    DeleteInboxMessage {
         app_uuid: String,
+        message_id: usize,
     },
     AppAnnouncements,
     SubscribePeerEvents,
     SubscribeAnnounceEvents,
+    SubscribeInboxEvents {
+        app_uuid: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -71,8 +75,9 @@ pub enum ResponseBody {
     Peers {
         peers: Vec<String>,
     },
-    Message {
-        message: Option<Message>,
+    Message (Message),
+    InboxMessages {
+        messages: Vec<Message>
     },
     AppAnnouncements {
         announcements: Vec<AppAnnouncement>
@@ -85,6 +90,7 @@ pub enum ResponseBody {
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[serde(tag="type")]
 pub struct Message {
     pub id: usize,
     pub peer: String,
@@ -94,6 +100,7 @@ pub struct Message {
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[serde(tag="type")]
 pub struct AppAnnouncement {
     pub peer: String,
     pub app_uuid: String,

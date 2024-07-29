@@ -52,13 +52,23 @@ interface JsonArray extends Array<JsonValue> { }
 type JsonValue = (null | boolean | number | string | JsonObject | JsonArray);
 
 export type Message = {
+    type: "Message",
     id: number,
     peer: string,
     uuid: string,
     message: Uint8Array,
 };
 
+export type MessageJson = {
+    type: "Message",
+    id: number,
+    peer: string,
+    uuid: string,
+    message: string,
+};
+
 export type AppAnnouncement = {
+    type: "AppAnnouncement",
     peer: string, 
     app_uuid: string,
     data: JsonValue,
@@ -76,16 +86,17 @@ export type MutinyRequestBody = {type: "LocalPeerId"}
     | {type: "Announce", peer: string, app_uuid: string, data: JsonValue}
     | {type: "AppAnnouncements"}
     | {
-        type: "MessageSend", 
+        type: "SendMessage", 
         peer: string,
         app_uuid: string,
         from_app_uuid: string,
         message: Uint8Array,
     }
-    | {type: "MessageRead", app_uuid: string}
-    | {type: "MessageNext", app_uuid: string}
+    | {type: "InboxMessages", app_uuid: string}
+    | {type: "DeleteInboxMessage", app_uuid: string, message_id: number}
     | {type: "SubscribePeerEvents"}
     | {type: "SubscribeAnnounceEvents"}
+    | {type: "SubscribeInboxEvents", app_uuid: string}
     ;
 
 export type MutinyResponse = {
@@ -96,20 +107,14 @@ export type MutinyResponse = {
 export type PeerEvent = {type: "PeerDiscovered", peer_id: string}
     | {type: "PeerExpired", peer_id: string};
 
-export type AnnounceEvent = {
-    type: "AppAnnouncement",
-    peer: string, 
-    app_uuid: string,
-    data: JsonValue,
-};
-
 export type MutinyResponseBody = {type: "Success"} 
     | {type: "Error", message: string}
     | {type: "LocalPeerId", peer_id: string}
     | {type: "Peers", peers: string[]}
     | {type: "AppInstanceUuid", uuid: string | null}
     | {type: "CreateAppInstance", uuid: string}
-    | {type: "Message", message: null | Message}
+    | {type: "Message", message: Message}
+    | {type: "InboxMessages", messages: Message[]}
     | {type: "AppAnnouncements",  announcements: AppAnnouncement[]}
     | PeerEvent
     ;
@@ -235,13 +240,11 @@ export class MutinyClient {
                 return this;
             },
             return(value?: PeerEvent) {
-                console.log('peerEvents iterator return()');
                 // Remove waiting promise
                 waiting.delete(request.id);
                 return Promise.resolve({value, done: true});
             },
             next: async () => {
-                console.log('peerEvents iterator next()');
                 const value = await promise;
                 // Register next promise
                 promise = new Promise((resolve, reject) => {
@@ -260,8 +263,14 @@ export class MutinyClient {
         return this._subscribe(request);
     }
 
-    announceEvents(): AsyncIterableIterator<AnnounceEvent> {
+    announceEvents(): AsyncIterableIterator<AppAnnouncement> {
         const body: MutinyRequestBody = {type: "SubscribeAnnounceEvents"};
+        const request = {id: this.next_request_id++, body};
+        return this._subscribe(request);
+    }
+
+    inboxEvents(app_uuid: string): AsyncIterableIterator<Message> {
+        const body: MutinyRequestBody = {type: "SubscribeInboxEvents", app_uuid};
         const request = {id: this.next_request_id++, body};
         return this._subscribe(request);
     }
@@ -290,14 +299,14 @@ export class MutinyClient {
         return response.announcements;
     }
 
-    async messageSend(
+    async sendMessage(
         peer: string,
         app_uuid: string,
         from_app_uuid: string,
         message: Uint8Array
     ): Promise<void> {
         const response = await this.requestOne({
-            type: "MessageSend", 
+            type: "SendMessage", 
             peer, 
             app_uuid,
             from_app_uuid,
@@ -307,14 +316,14 @@ export class MutinyClient {
         return;
     }
 
-    async messageRead(app_uuid: string): Promise<Message | null> {
-        const response = await this.requestOne({type: "MessageRead", app_uuid});
-        assert(response.type === 'Message');
-        return response.message;
+    async inboxMessages(app_uuid: string): Promise<Message[]> {
+        const response = await this.requestOne({type: "InboxMessages", app_uuid});
+        assert(response.type === 'InboxMessages');
+        return response.messages;
     }
 
-    async messageNext(app_uuid: string): Promise<void> {
-        const response = await this.requestOne({type: "MessageNext", app_uuid});
+    async deleteInboxMessage(app_uuid: string, message_id: number): Promise<void> {
+        const response = await this.requestOne({type: "DeleteInboxMessage", app_uuid, message_id});
         assert(response.type === 'Success');
         return;
     }

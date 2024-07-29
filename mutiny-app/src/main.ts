@@ -1,4 +1,4 @@
-import { connect, defaultSocketPath, MutinyClient, Message } from "../../lib/client.ts";
+import { connect, defaultSocketPath, MutinyClient } from "../../lib/client.ts";
 import { parseArgs } from "@std/cli/parse-args";
 import { serveDir } from "@std/http";
 
@@ -58,28 +58,17 @@ export class Server {
             return eventStream(this.client.peerEvents(), event => {
                 return [event.type, event.peer_id];
             });
-        } else if (request.method === 'POST' && pathname === '/_api/v1/message_send') {
+        } else if (request.method === 'POST' && pathname === '/_api/v1/announcements/outbox') {
             const body = await request.json();
-            const message = new TextEncoder().encode(body.message);
-            return new Response(JSON.stringify(await this.client.messageSend(
+            await this.client.announce(
                 body.peer,
-                body.app_uuid,
                 this.app.uuid,
-                message,
-            )));
-        } else if (pathname === '/_api/v1/announcements') {
-            if (request.method === 'POST') {
-                const body = await request.json();
-                await this.client.announce(
-                    body.peer,
-                    this.app.uuid,
-                    body.data,
-                );
-                return new Response(JSON.stringify({success: true}));
-            } else {
-                return new Response(JSON.stringify(await this.client.announcements()));
-            }
-        } else if (pathname === '/_api/v1/announcements/events') {
+                body.data,
+            );
+            return new Response(JSON.stringify({success: true}));
+        } else if (pathname === '/_api/v1/announcements/inbox') {
+            return new Response(JSON.stringify(await this.client.announcements()));
+        } else if (pathname === '/_api/v1/announcements/inbox/events') {
             return eventStream(this.client.announceEvents(), event => {
                 return [event.type, JSON.stringify({
                     peer: event.peer, 
@@ -87,16 +76,36 @@ export class Server {
                     data: event.data,
                 })];
             });
-        } else if (pathname === '/_api/v1/message_read') {
-            const m = await this.client.messageRead(this.app.uuid) as Message;
-            return new Response(JSON.stringify(m && {
+        } else if (request.method === 'POST' && pathname === '/_api/v1/messages/outbox') {
+            const body = await request.json();
+            const message = new TextEncoder().encode(body.message);
+            return new Response(JSON.stringify(await this.client.sendMessage(
+                body.peer,
+                body.app_uuid,
+                this.app.uuid,
+                message,
+            )));
+        } else if (request.method === 'GET' && pathname === '/_api/v1/messages/inbox') {
+            const messages = await this.client.inboxMessages(this.app.uuid);
+            return new Response(JSON.stringify(messages.map(m => ({
+                id: m.id,
                 peer: m.peer,
                 uuid: m.uuid,
                 message: new TextDecoder().decode(m.message),
-            }));
-        } else if (request.method === 'POST' && pathname === '/_api/v1/message_next') {
-            await this.client.messageNext(this.app.uuid);
+            }))));
+        } else if (request.method === 'DELETE' && pathname === '/_api/v1/messages/inbox') {
+            const body = await request.json();
+            await this.client.deleteInboxMessage(this.app.uuid, body.message_id);
             return new Response(JSON.stringify({success: true}));
+        } else if (pathname === '/_api/v1/messages/inbox/events') {
+            return eventStream(this.client.inboxEvents(this.app.uuid), event => {
+                return [event.type, JSON.stringify({
+                    id: event.id,
+                    peer: event.peer, 
+                    uuid: event.uuid,
+                    message: new TextDecoder().decode(event.message),
+                })];
+            });
         } else {
             return new Response('Not found', {status: 404});
         }

@@ -258,24 +258,6 @@ impl<'a> StoreTransaction<'a> {
         Ok(())
     }
 
-    pub fn put_message_inbox(&self, received: i64, from: i64, to: i64, message_id: i64) -> Result<i64> {
-        let mut stmt = self.tx.prepare_cached(
-            "INSERT INTO message_inbox (received, from_app_id, to_app_id, message_id)
-             VALUES (?1, ?2, ?3, ?4)
-             RETURNING id",
-        )?;
-        stmt.query_row([received, from, to, message_id], |row| row.get::<_, i64>(0))
-    }
-
-    // pub fn delete_message_inbox(&self, inbox_id: i64) -> Result<()> {
-    //     let mut stmt = self.tx.prepare_cached(
-    //         "DELETE FROM message_inbox
-    //          WHERE id = ?1",
-    //     )?;
-    //     stmt.execute([inbox_id])?;
-    //     self.prune_message_data()
-    // }
-
     pub fn put_message_outbox(&self, queued: i64, from: i64, to: i64, message_id: i64) -> Result<i64> {
         let mut stmt = self.tx.prepare_cached(
             "INSERT INTO message_outbox (queued, from_app_id, to_app_id, message_id)
@@ -326,7 +308,16 @@ impl<'a> StoreTransaction<'a> {
         Ok(())
     }
 
-    pub fn read_message(&self, app_id: i64) -> Result<Option<Message>> {
+    pub fn put_message_inbox(&self, received: i64, from: i64, to: i64, message_id: i64) -> Result<i64> {
+        let mut stmt = self.tx.prepare_cached(
+            "INSERT INTO message_inbox (received, from_app_id, to_app_id, message_id)
+             VALUES (?1, ?2, ?3, ?4)
+             RETURNING id",
+        )?;
+        stmt.query_row([received, from, to, message_id], |row| row.get::<_, i64>(0))
+    }
+
+    pub fn list_app_inbox_messages(&self, app_id: i64) -> Result<Vec<Message>> {
         let mut stmt = self.tx.prepare_cached(
             "SELECT message_inbox.id, peer.peer_id, app.uuid, data
              FROM message_inbox
@@ -334,29 +325,27 @@ impl<'a> StoreTransaction<'a> {
              JOIN app ON app.id = from_app_id
              JOIN peer ON peer.id = app.peer_id
              WHERE to_app_id = ?1
-             ORDER BY message_inbox.id ASC
-             LIMIT 1",
+             ORDER BY message_inbox.id ASC",
         )?;
-        stmt.query_row([app_id], |row| {
-            Ok(Message {
+        let mut rows = stmt.query([app_id])?;
+        let mut results = Vec::new();
+        while let Some(row) = rows.next()? {
+            results.push(Message {
                 id: row.get::<_, usize>(0)?,
                 peer: row.get::<_, String>(1)?,
                 uuid: row.get::<_, String>(2)?,
                 message: row.get::<_, Vec<u8>>(3)?,
-            })
-        }).optional()
+            });
+        }
+        return Ok(results);
     }
 
-    pub fn next_message(&self, app_id: i64) -> Result<()> {
+    pub fn delete_inbox_message(&self, to: i64, message_id: i64) -> Result<()> {
         let mut stmt = self.tx.prepare_cached(
             "DELETE FROM message_inbox
-             WHERE id IN (
-                 SELECT min(id)
-                 FROM message_inbox
-                 WHERE to_app_id = ?1
-             )",
+             WHERE to_app_id = ?1 AND id = ?2",
         )?;
-        stmt.execute([app_id])?;
+        stmt.execute([to, message_id])?;
         Ok(())
     }
 

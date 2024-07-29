@@ -17,6 +17,7 @@ pub struct Server {
     listener: UnixListener,
     peer_subscribers: HashMap<usize, mpsc::Sender<ResponseBody>>,
     announce_subscribers: HashMap<usize, mpsc::Sender<ResponseBody>>,
+    inbox_subscribers: HashMap<i64, HashMap<usize, mpsc::Sender<ResponseBody>>>,
     client_request_receiver: mpsc::Receiver<ClientRequest>,
     client_request_sender: mpsc::Sender<ClientRequest>,
     peers: HashSet<(PeerId, Multiaddr)>,
@@ -33,6 +34,7 @@ impl Server {
             listener: UnixListener::bind(config.socket_path.as_path())?,
             peer_subscribers: HashMap::new(),
             announce_subscribers: HashMap::new(),
+            inbox_subscribers: HashMap::new(),
             swarm: swarm::start(config.keypair).await?,
             client_request_receiver: rx,
             client_request_sender: tx,
@@ -118,8 +120,14 @@ impl Server {
                 let from = tx.get_app(peer_id, &from_app_uuid)?.ok_or("Cannot find 'from' app in database")?;
                 let to = tx.get_app(local_peer_id, &to_app_uuid)?.ok_or("Cannot find 'to' app in database")?;
                 let message_id = tx.get_or_put_message_data(&message)?;
-                tx.put_message_inbox(received, from, to, message_id)?;
+                let id = tx.put_message_inbox(received, from, to, message_id)?;
                 tx.commit()?;
+                self.inbox_subscribers_send(to, ResponseBody::Message ( Message {
+                    id: id.try_into()?,
+                    peer: peer.to_base58(),
+                    uuid: from_app_uuid,
+                    message,
+                })).await;
             },
         }
         let _ = self.swarm.behaviour_mut().request_response.send_response(
@@ -172,6 +180,22 @@ impl Server {
         }
         for request_id in to_remove {
             self.announce_subscribers.remove(&request_id);
+        }
+    }
+
+    async fn inbox_subscribers_send(&mut self, app_id: i64, message: ResponseBody) -> () {
+        let mut to_remove: Vec<usize> = vec![] ;
+        if let Some(subscribers) = self.inbox_subscribers.get(&app_id) {
+            for (request_id, sender) in subscribers {
+                if let Err(err) = sender.send(message.clone()).await {
+                    eprintln!("Error sending message to announce event subscriber: {}", err);
+                    // Remove this subscriber
+                    to_remove.push(*request_id);
+                }
+            }
+            for request_id in to_remove {
+                self.announce_subscribers.remove(&request_id);
+            }
         }
     }
 
@@ -286,20 +310,20 @@ impl Server {
         Ok(tx.commit()?)
     }
 
-    fn read_message(&mut self, uuid: String) -> Result<Option<Message>, Box<dyn Error>> {
-        let tx = self.store.transaction()?;
-        let local_peer_id = tx.get_peer(&self.peer_id.to_base58())?.ok_or("Cannot find local peer ID in database")?;
-        let app_id = tx.get_app(local_peer_id, &uuid)?.ok_or("Cannot find 'to' app instance in database")?;
-        Ok(tx.read_message(app_id)?)
-    }
+    // fn read_message(&mut self, uuid: String) -> Result<Option<Message>, Box<dyn Error>> {
+    //     let tx = self.store.transaction()?;
+    //     let local_peer_id = tx.get_peer(&self.peer_id.to_base58())?.ok_or("Cannot find local peer ID in database")?;
+    //     let app_id = tx.get_app(local_peer_id, &uuid)?.ok_or("Cannot find 'to' app instance in database")?;
+    //     Ok(tx.read_message(app_id)?)
+    // }
 
-    fn next_message(&mut self, uuid: String) -> Result<(), Box<dyn Error>> {
-        let tx = self.store.transaction()?;
-        let local_peer_id = tx.get_peer(&self.peer_id.to_base58())?.ok_or("Cannot find local peer ID in database")?;
-        let app_id = tx.get_app(local_peer_id, &uuid)?.ok_or("Cannot find 'to' app instance in database")?;
-        tx.next_message(app_id)?;
-        Ok(tx.commit()?)
-    }
+    // fn next_message(&mut self, uuid: String) -> Result<(), Box<dyn Error>> {
+    //     let tx = self.store.transaction()?;
+    //     let local_peer_id = tx.get_peer(&self.peer_id.to_base58())?.ok_or("Cannot find local peer ID in database")?;
+    //     let app_id = tx.get_app(local_peer_id, &uuid)?.ok_or("Cannot find 'to' app instance in database")?;
+    //     tx.next_message(app_id)?;
+    //     Ok(tx.commit()?)
+    // }
 
     async fn handle_request(&mut self, request: ClientRequest) -> Result<(), Box<dyn Error>> {
         match request.request.body {
@@ -350,16 +374,23 @@ impl Server {
                 }
                 let _ = request.response.send(ResponseBody::Success).await;
             },
-            RequestBody::MessageSend {peer, app_uuid, from_app_uuid, message} => {
+            RequestBody::SendMessage {peer, app_uuid, from_app_uuid, message} => {
                 self.send_message(peer, app_uuid, from_app_uuid, message)?;
                 let _ = request.response.send(ResponseBody::Success).await;
             },
-            RequestBody::MessageRead {app_uuid} => {
-                let message = self.read_message(app_uuid)?;
-                let _ = request.response.send(ResponseBody::Message {message}).await;
+            RequestBody::InboxMessages {app_uuid} => {
+                let tx = self.store.transaction()?;
+                let peer_id = tx.get_or_put_peer(&self.peer_id.to_base58())?;
+                let app_id = tx.get_or_put_app(peer_id, &app_uuid)?;
+                let _ = request.response.send(ResponseBody::InboxMessages {
+                    messages: tx.list_app_inbox_messages(app_id)?,
+                }).await;
             },
-            RequestBody::MessageNext {app_uuid} => {
-                self.next_message(app_uuid)?;
+            RequestBody::DeleteInboxMessage {app_uuid, message_id} => {
+                let tx = self.store.transaction()?;
+                let peer_id = tx.get_or_put_peer(&self.peer_id.to_base58())?;
+                let app_id = tx.get_or_put_app(peer_id, &app_uuid)?;
+                tx.delete_inbox_message(app_id, message_id.try_into()?)?;
                 let _ = request.response.send(ResponseBody::Success).await;
             },
             RequestBody::SubscribePeerEvents => {
@@ -367,6 +398,13 @@ impl Server {
             },
             RequestBody::SubscribeAnnounceEvents => {
                 self.announce_subscribers.insert(request.request.id, request.response);
+            },
+            RequestBody::SubscribeInboxEvents {app_uuid} => {
+                let tx = self.store.transaction()?;
+                let peer_id = tx.get_or_put_peer(&self.peer_id.to_base58())?;
+                let app_id = tx.get_or_put_app(peer_id, &app_uuid)?;
+                let subscribers = self.inbox_subscribers.entry(app_id).or_insert(HashMap::new());
+                subscribers.insert(request.request.id, request.response);
             }
         }
         Ok(())

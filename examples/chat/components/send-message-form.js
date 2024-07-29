@@ -41,7 +41,7 @@ export default class ChatSendMessageForm extends HTMLElement {
         ev.preventDefault();
         if (selected_announcement.value && local_peer_id.value && local_app_uuid.value) {
             const message = this.input.value;
-            await fetch("/_api/v1/message_send", {
+            await fetch("/_api/v1/messages/outbox", {
                 method: "POST",
                 body: JSON.stringify({
                     peer: selected_announcement.value.peer,

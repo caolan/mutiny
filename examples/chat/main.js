@@ -34,7 +34,7 @@ async function announce(peers) {
        nick: state.nick.value,
    };
    for (const peer of peers) {
-       await fetch("/_api/v1/announcements", {
+       await fetch("/_api/v1/announcements/outbox", {
            method: 'POST',
            body: JSON.stringify({peer, data}),
        });
@@ -42,7 +42,7 @@ async function announce(peers) {
 }
 
 async function fetchAnnouncements() {
-   const res = await fetch("/_api/v1/announcements");
+   const res = await fetch("/_api/v1/announcements/inbox");
    const data = /** @type {import("../../lib/client.ts").AppAnnouncement[]} */(await res.json());
    // Only list announcements for current app from peers in current discovered list
    return data.filter(x => {
@@ -54,26 +54,33 @@ async function fetchAnnouncements() {
    });
 }
 
-async function getMessages() {
-    while (true) {
-        const res = await fetch("/_api/v1/message_read");
-        const data = await res.json();
-        if (data && state.local_peer_id.value && state.local_app_uuid.value) {
-            const from = {
-                peer: data.peer,
-                app_uuid: data.uuid,
-            };
-            const to = {
-                peer: state.local_peer_id.value,
-                app_uuid: state.local_app_uuid.value,
-            };
-            state.appendMessage(from, to, data.message);
-            await fetch("/_api/v1/message_next", {method: "POST"});
-        } else {
-            // Check again in 1 second
-            setTimeout(getMessages, 1000);
-            return;
-        }
+/** @param {import("../../lib/client.ts").MessageJson} message */
+async function receiveMessage(message) {
+    if (state.local_peer_id.value && state.local_app_uuid.value) {
+        const from = {
+            peer: message.peer,
+            app_uuid: message.uuid,
+        };
+        const to = {
+            peer: state.local_peer_id.value,
+            app_uuid: state.local_app_uuid.value,
+        };
+        state.appendMessage(from, to, message.message);
+        // Delete seen messages
+        await fetch("/_api/v1/messages/inbox", {
+            method: "DELETE",
+            body: JSON.stringify({
+                message_id: message.id
+            }),
+        });
+    }
+}
+
+async function fetchMessages() {
+    const res = await fetch("/_api/v1/messages/inbox");
+    const data = await res.json();
+    for (const message of data) {
+        await receiveMessage(message);
     }
 }
 
@@ -82,15 +89,13 @@ await updateLocalPeerId();
 await updateLocalAppInstance();
 state.announcements.value = await fetchAnnouncements();
 state.peers.value = await fetchPeers();
+await fetchMessages();
 
 // Announce app to newly discovered peers
 announce(state.peers.value);
 
 // Announce to all peers when nick changes
 watch([state.nick], () => announce(state.peers.value));
-
-// Start polling for messages
-getMessages();
 
 // Ask user for nickname
 askNick();
@@ -108,7 +113,7 @@ peer_events.addEventListener("PeerExpired", peer_id => {
     state.peers.signal();
 });
 
-const announcement_events = new EventSource("/_api/v1/announcements/events");
+const announcement_events = new EventSource("/_api/v1/announcements/inbox/events");
 announcement_events.addEventListener("AppAnnouncement", event => {
     const announcement = JSON.parse(event.data);
     console.log('App announced', announcement);
@@ -118,4 +123,11 @@ announcement_events.addEventListener("AppAnnouncement", event => {
         }
         return x;
     });
+});
+
+const inbox_events = new EventSource("/_api/v1/messages/inbox/events");
+inbox_events.addEventListener("Message", event => {
+    const message = JSON.parse(event.data);
+    console.log('Message received', message);
+    receiveMessage(/** @type {import("../../lib/client.ts").MessageJson} */(message));
 });

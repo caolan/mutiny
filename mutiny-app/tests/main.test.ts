@@ -56,7 +56,7 @@ Deno.test("Send app announcement", async () => {
             return Promise.resolve(undefined);
         },
     });
-    const request = new Request(`${BASE_URL}/_api/v1/announcements`, {
+    const request = new Request(`${BASE_URL}/_api/v1/announcements/outbox`, {
         method: "POST",
         body: JSON.stringify({
             peer: "peer2", 
@@ -94,62 +94,65 @@ Deno.test("List app announcements", async () => {
             return Promise.resolve(announcements);
         },
     });
-    const request = new Request(`${BASE_URL}/_api/v1/announcements`);
+    const request = new Request(`${BASE_URL}/_api/v1/announcements/inbox`);
     const response = await server.handleRequest(request);
     const data = await response.json();
     assertEquals(data, announcements);
 });
 
-Deno.test("Read message (with message)", async () => {
+Deno.test("Read inbox (with message)", async () => {
     const message = {
         peer: "peer2",
         uuid: "app2",
         message: new TextEncoder().encode("hello"),
     };
     const server = makeServer({
-        messageRead(uuid: string) {
+        inboxMessages(uuid: string) {
             assertEquals(uuid, APP.uuid);
-            return Promise.resolve(message);
+            return Promise.resolve([message]);
         },
     });
-    const request = new Request(`${BASE_URL}/_api/v1/message_read`);
+    const request = new Request(`${BASE_URL}/_api/v1/messages/inbox`);
     const response = await server.handleRequest(request);
     const data = await response.json();
-    assertEquals(data, {
+    assertEquals(data, [{
         peer: "peer2",
         uuid: "app2",
         message: "hello",
-    });
+    }]);
 });
 
-Deno.test("Read message (with no message)", async () => {
+Deno.test("Read inbox (with no message)", async () => {
     const server = makeServer({
-        messageRead(uuid: string) {
+        inboxMessages(uuid: string) {
             assertEquals(uuid, APP.uuid);
-            return Promise.resolve(null);
+            return Promise.resolve([]);
         },
     });
-    const request = new Request(`${BASE_URL}/_api/v1/message_read`);
+    const request = new Request(`${BASE_URL}/_api/v1/messages/inbox`);
     const response = await server.handleRequest(request);
     const data = await response.json();
-    assertEquals(data, null);
+    assertEquals(data, []);
 });
 
-Deno.test("Next message", async () => {
-    const calls: string[] = [];
+Deno.test("Delete inbox message", async () => {
+    const calls: [string, number][] = [];
     const server = makeServer({
-        messageNext(uuid: string) {
-            calls.push(uuid);
+        deleteInboxMessage(uuid: string, message_id: number) {
+            calls.push([uuid, message_id]);
             return Promise.resolve(null);
         },
     });
-    const request = new Request(`${BASE_URL}/_api/v1/message_next`, {
-        method: "POST",
+    const request = new Request(`${BASE_URL}/_api/v1/messages/inbox`, {
+        method: "DELETE",
+        body: JSON.stringify({
+            message_id: 123,
+        })
     });
     const response = await server.handleRequest(request);
     const data = await response.json();
     assertEquals(data, {success: true});
-    assertEquals(calls, [APP.uuid]);
+    assertEquals(calls, [[APP.uuid, 123]]);
 });
 
 Deno.test("Unknown API path", async () => {
