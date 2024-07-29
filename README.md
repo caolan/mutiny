@@ -133,3 +133,7 @@ Unit tests for the mutiny-app server:
 cd mutiny-app
 deno test -A
 ```
+
+## API documentation
+
+* [Mutiny app API documentation](https://github.com/caolan/mutiny/blob/main/docs/api.md)
