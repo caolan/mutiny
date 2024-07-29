@@ -134,6 +134,7 @@ cd mutiny-app
 deno test -A
 ```
 
-## API documentation
+## Documentation
 
-* [Mutiny app API documentation](https://github.com/caolan/mutiny/blob/main/docs/api.md)
+* [API documentation](https://github.com/caolan/mutiny/blob/main/docs/api.md)
+* [Tutorial](https://github.com/caolan/mutiny/blob/main/docs/tutorial.md)
