@@ -3,7 +3,7 @@
 Authoring an app for Mutiny requires only static HTML/JS/CSS, and a familiarity
 with the Mutiny app API.
 
-[Mutiny app API documentation](https://github.com/caolan/mutiny/blob/main/docs/api.md)
+[Mutiny app API documentation](../docs/api.md)
 
 ## Installation
 
@@ -192,4 +192,4 @@ requesting initial data using `fetch()` is used across the Mutiny app
 API.
 
 To develop this application further, try out the Announce and Messaging
-APIs in the [documentation](https://github.com/caolan/mutiny/blob/main/docs/api.md).
+APIs in the [documentation](../docs/api.md).
