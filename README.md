@@ -136,5 +136,5 @@ deno test -A
 
 ## Documentation
 
-* [API documentation](https://github.com/caolan/mutiny/blob/main/docs/api.md)
-* [Tutorial](https://github.com/caolan/mutiny/blob/main/docs/tutorial.md)
+* [API documentation](./docs/api.md)
+* [Tutorial](./docs/tutorial.md)
