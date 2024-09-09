@@ -34,19 +34,6 @@ type ConnectOptions = {
     socket_path?: string,
 };
 
-export async function connect({socket_path}: ConnectOptions): Promise<MutinyClient> {
-    const path = socket_path ?? defaultSocketPath(); 
-    if (!path) {
-        throw new Error("Could not determine mutinyd.socket path");
-    }
-    console.log(`Connecting to ${path}`);
-    const conn = await Deno.connect({
-        transport: 'unix',
-        path,
-    });
-    return new MutinyClient(conn);
-}
-
 interface JsonObject { [name: string]: JsonValue }
 interface JsonArray extends Array<JsonValue> { }
 type JsonValue = (null | boolean | number | string | JsonObject | JsonArray);
@@ -122,6 +109,12 @@ export type MutinyResponseBody = {type: "Success"}
     | PeerEvent
     ;
 
+function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => {
+        setTimeout(resolve, ms);
+    });
+}
+
 export class MutinyClient {
     private next_request_id = 1;
     private sending_requests = false;
@@ -131,12 +124,50 @@ export class MutinyClient {
         resolve: (response: MutinyResponseBody) => void,
         reject: (err: Error) => void,
     }> = new Map();
+    private conn?: Deno.UnixConn;
+    private socket_path: string;
+    private connection_promise?: Promise<Deno.UnixConn>;
 
-    constructor(
-        private conn: Deno.UnixConn,
-    ) {}
+    constructor({socket_path}: ConnectOptions) {
+        const path = socket_path ?? defaultSocketPath();
+        if (!path) {
+            throw new Error("Could not determine mutinyd.socket path");
+        }
+        this.socket_path = path;
+    }
+
+    private async connect() {
+        if (!this.connection_promise) {
+            this.connection_promise = (async () => {
+                while (true) {
+                    try {
+                        this.conn = await Deno.connect({
+                            transport: 'unix',
+                            path: this.socket_path,
+                        });
+                        break;
+                    } catch (err) {
+                        console.error(`Error connecting to ${this.socket_path}: ${err.message}`);
+                        // Deno.errors.NotFound
+                        // Deno.errors.ConnectionRefused
+                        // ...
+                        await sleep(1000);
+                    }
+                }
+                console.log(`Connected to ${this.socket_path}`);
+                this.connection_promise = undefined;
+                return this.conn;
+            })();
+        }
+        return await this.connection_promise;
+    }
+
+    private async getConnection(): Promise<Deno.UnixConn> {
+        return this.conn ?? await this.connect();
+    }
 
     private async sendRequests() {
+        const conn = await this.getConnection();
         while (this.queued.length > 0) {
             const requests = this.queued;
             this.queued = [];
@@ -146,8 +177,8 @@ export class MutinyClient {
                 const length_buf = new ArrayBuffer(4);
                 const encoded = msgpack.encode(request);
                 new DataView(length_buf).setUint32(0, encoded.byteLength, false);
-                await writeAll(this.conn, new Uint8Array(length_buf, 0));
-                await writeAll(this.conn, encoded);
+                await writeAll(conn, new Uint8Array(length_buf, 0));
+                await writeAll(conn, encoded);
             }
         }
         this.sending_requests = false;
@@ -155,16 +186,39 @@ export class MutinyClient {
 
     private async dispatchResponses() {
         while (this.waiting.size > 0) {
+            const conn = await this.getConnection();
             // read response
             let length_buf = new ArrayBuffer(4);
-            const reader = this.conn.readable.getReader({mode: "byob"});
-            length_buf = await readFullBuffer(reader, length_buf);
-            const response_len = new DataView(length_buf).getUint32(0, false);
-            const response_buf = await readFullBuffer(
-                reader,
-                new ArrayBuffer(response_len),
-            );
-            reader.releaseLock();
+            let response_buf;
+            try {
+                const reader = conn.readable.getReader({mode: "byob"});
+                length_buf = await readFullBuffer(reader, length_buf);
+                const response_len = new DataView(length_buf).getUint32(0, false);
+                response_buf = await readFullBuffer(
+                    reader,
+                    new ArrayBuffer(response_len),
+                );
+                reader.releaseLock();
+            } catch (err) {
+                // Failed to read full response.
+                // This is unrecoverable, so reject all waiting requests
+                // and disconnect.
+                console.error(`Mutinyd client error: ${err.message}`);
+                if (this.conn) {
+                    try {
+                        this.conn.close();
+                    } catch (_) {
+                        // Do nothing.
+                    }
+                }
+                this.conn = undefined;
+                const waiting = this.waiting;
+                this.waiting = new Map();
+                for (const req of waiting.values()) {
+                    req.reject(err);
+                }
+                continue;
+            }
             const response = msgpack.decode(
                 new Uint8Array(response_buf)
             ) as MutinyResponse;
@@ -178,9 +232,10 @@ export class MutinyClient {
                 // and call dispatchResponses again.
                 this.waiting.delete(response.request_id);
                 if (response.body.type === 'Error') {
-                    return req.reject(new Error(response.body.message))
-                };
-                req.resolve(response.body);
+                    req.reject(new Error(response.body.message))
+                } else {
+                    req.resolve(response.body);
+                }
             }
         }
         this.dispatching_responses = false;
