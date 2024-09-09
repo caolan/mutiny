@@ -139,6 +139,17 @@ impl<'a> StoreTransaction<'a> {
                          PRAGMA user_version = 3;"
                     )?;
                 },
+                3 => {
+                    // Re-use of randomly assigned ports
+                    println!("Migrating database to version 4");
+                    self.tx.execute_batch(
+                        "CREATE TABLE app_last_port (
+                             app_id INTEGER PRIMARY KEY REFERENCES app(id),
+                             port INTEGER NOT NULL
+                         );
+                         PRAGMA user_version = 4;"
+                    )?;
+                },
                 _ => break,
             }
         }
@@ -200,6 +211,25 @@ impl<'a> StoreTransaction<'a> {
              VALUES (?1, ?2);",
         )?;
         stmt.execute(params![app_id, label])?;
+        Ok(())
+    }
+
+    pub fn get_last_port(&self, app_id: i64) -> Result<Option<u16>> {
+        let mut stmt = self.tx.prepare_cached(
+            "SELECT port
+             FROM app_last_port
+             WHERE app_id = ?1",
+        )?;
+        stmt.query_row([app_id], |row| row.get::<_, u16>(0)).optional()
+    }
+
+    pub fn set_last_port(&self, app_id: i64, port: u16) -> Result<()> {
+        let mut stmt = self.tx.prepare_cached(
+            "INSERT INTO app_last_port (app_id, port)
+             VALUES (?1, ?2)
+             ON CONFLICT (app_id) DO UPDATE SET port=?2",
+        )?;
+        stmt.execute(params![app_id, port])?;
         Ok(())
     }
 

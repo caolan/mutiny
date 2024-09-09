@@ -81,6 +81,8 @@ export type MutinyRequest = {
 export type MutinyRequestBody = {type: "LocalPeerId"}
     | {type: "Peers"}
     | {type: "AppAnnouncements"}
+    | {type: "GetLastPort", app_uuid: string}
+    | {type: "SetLastPort", app_uuid: string, port: number}
     | {type: "AppInstanceUuid", label: string}
     | {type: "CreateAppInstance", label: string}
     | {type: "Announce", peer: string, app_uuid: string, data: JsonValue}
@@ -112,6 +114,7 @@ export type MutinyResponseBody = {type: "Success"}
     | {type: "LocalPeerId", peer_id: string}
     | {type: "Peers", peers: string[]}
     | {type: "AppInstanceUuid", uuid: string | null}
+    | {type: "GetLastPort", port: number | null}
     | {type: "CreateAppInstance", uuid: string}
     | {type: "Message", message: Message}
     | {type: "InboxMessages", messages: Message[]}
@@ -281,6 +284,17 @@ export class MutinyClient {
         return response.uuid;
     }
 
+    async getLastPort(app_uuid: string): Promise<number | null> {
+        const response = await this.requestOne({type: "GetLastPort", app_uuid});
+        assert(response.type === 'GetLastPort');
+        return response.port;
+    }
+
+    async setLastPort(app_uuid: string, port: number): Promise<void> {
+        const response = await this.requestOne({type: "SetLastPort", app_uuid, port});
+        assert(response.type === 'Success');
+    }
+
     async createAppInstance(label: string): Promise<string> {
         const response = await this.requestOne({type: "CreateAppInstance", label});
         assert(response.type === 'CreateAppInstance');
@@ -290,7 +304,6 @@ export class MutinyClient {
     async announce(peer: string, app_uuid: string, data: JsonValue): Promise<void> {
         const response = await this.requestOne({type: "Announce", peer, app_uuid, data});
         assert(response.type === 'Success');
-        return;
     }
 
     async announcements(): Promise<AppAnnouncement[]> {

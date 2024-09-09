@@ -15,6 +15,13 @@ pub enum RequestBody {
     AppInstanceUuid {
         label: String,
     },
+    GetLastPort {
+        app_uuid: String,
+    },
+    SetLastPort {
+        app_uuid: String,
+        port: u16,
+    },
     LocalPeerId,
     Peers,
     Announce {
@@ -68,6 +75,9 @@ pub enum ResponseBody {
     },
     AppInstanceUuid {
         uuid: Option<String>,
+    },
+    GetLastPort {
+        port: Option<u16>,
     },
     LocalPeerId {
         peer_id: String

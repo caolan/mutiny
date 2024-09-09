@@ -117,19 +117,38 @@ export class Server {
             serveDir(request, {fsRoot: this.root})
     }
 
-    serve(): Deno.HttpServer<Deno.NetAddr> {
-        return Deno.serve({
-            hostname: '127.0.0.1',
-            port: 0,
-            onListen: addr => {
-                console.log("Application:");
-                console.log(`  uuid: ${this.app.uuid}`);
-                console.log(`  label: ${this.app.label}`); 
-                console.log("");
-                console.log(`Serving ${this.root}:`);
-                console.log(`  http://${addr.hostname}:${addr.port}/`);
-            },
-        }, this.handleRequest.bind(this));
+    async serve(): Promise<Deno.HttpServer<Deno.NetAddr>> {
+        const onListen = async (addr: Deno.NetAddr) => {
+            console.log("Application:");
+            console.log(`  uuid: ${this.app.uuid}`);
+            console.log(`  label: ${this.app.label}`);
+            console.log("");
+            console.log(`Serving ${this.root}:`);
+            console.log(`  http://${addr.hostname}:${addr.port}/`);
+            // Update last used port so we can attempt to use it again
+            // on restart.
+            await this.client.setLastPort(this.app.uuid, addr.port);
+        };
+        const hostname = '127.0.0.1';
+        const port = await this.client.getLastPort(this.app.uuid) ?? 0;
+        try {
+            return Deno.serve({
+                onListen,
+                hostname,
+                port,
+            }, this.handleRequest.bind(this));
+        } catch (err) {
+            if (err.code === 'EADDRINUSE') {
+                // Address already in use, get a new randomly assigned port
+                return Deno.serve({
+                    onListen,
+                    hostname,
+                    port: 0,
+                }, this.handleRequest.bind(this));
+            } else {
+                throw err;
+            }
+        }
     }
 }
 
@@ -153,5 +172,5 @@ if (import.meta.main) {
     );
 
     const server = new Server(client, {label, uuid}, root);
-    server.serve();
+    await server.serve();
 }

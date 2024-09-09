@@ -335,6 +335,21 @@ impl Server {
                 let uuid = self.get_app_uuid(&label)?;
                 let _ = request.response.send(ResponseBody::AppInstanceUuid {uuid}).await;
             },
+            RequestBody::GetLastPort {app_uuid} => {
+                let tx = self.store.transaction()?;
+                let peer_id = tx.get_or_put_peer(&self.peer_id.to_base58())?;
+                let app_id = tx.get_or_put_app(peer_id, &app_uuid)?;
+                let port = tx.get_last_port(app_id)?;
+                let _ = request.response.send(ResponseBody::GetLastPort {port}).await;
+            },
+            RequestBody::SetLastPort {app_uuid, port} => {
+                let tx = self.store.transaction()?;
+                let peer_id = tx.get_or_put_peer(&self.peer_id.to_base58())?;
+                let app_id = tx.get_or_put_app(peer_id, &app_uuid)?;
+                tx.set_last_port(app_id, port)?;
+                tx.commit()?;
+                let _ = request.response.send(ResponseBody::Success).await;
+            },
             RequestBody::LocalPeerId => {
                 let _ = request.response.send(ResponseBody::LocalPeerId {
                     peer_id: self.swarm.local_peer_id().to_base58()
