@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1.37.0", features = ["full"] }
-libp2p = { version = "0.53.2", features = ["tcp", "quic", "tls", "dns", "noise", "yamux", "websocket", "ping", "macros", "tokio", "gossipsub", "mdns", "request-response", "cbor"] }
+libp2p = { version = "0.54.1", features = ["tcp", "quic", "tls", "dns", "noise", "yamux", "websocket", "ping", "macros", "tokio", "gossipsub", "mdns", "kad", "request-response", "cbor"] }
 serde = { version = "1.0.203", features = ["derive"] }
 uuid = { version = "1.8.0", features = ["v4"] }
 rusqlite = "0.31.0"

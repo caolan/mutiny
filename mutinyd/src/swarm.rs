@@ -26,6 +26,7 @@ pub enum Response {
 pub struct MutinyBehaviour {
     pub request_response: request_response::cbor::Behaviour<Request, Response>,
     pub mdns: mdns::tokio::Behaviour,
+    pub kad: libp2p::kad::Behaviour<libp2p::kad::store::MemoryStore>,
 }
 
 pub type Swarm = libp2p::swarm::Swarm<MutinyBehaviour>;
@@ -48,10 +49,16 @@ pub async fn start(keypair: Keypair) -> Result<
                 libp2p::request_response::Config::default(),
             );
             // Find peers on local network using multicast DNS
-            let mdns = libp2p::mdns::tokio::Behaviour::new(
+            let mdns = libp2p::mdns::Behaviour::new(
                 libp2p::mdns::Config::default(), key.public().to_peer_id()
             )?;
-            Ok(MutinyBehaviour { request_response, mdns })
+            // Create a Kademlia behaviour.
+            let protocol_name = StreamProtocol::new("/mutiny/kad/1.0.0");
+            let mut cfg = libp2p::kad::Config::new(protocol_name);
+            cfg.set_query_timeout(Duration::from_secs(5 * 60));
+            let store = libp2p::kad::store::MemoryStore::new(key.public().to_peer_id());
+            let kad = libp2p::kad::Behaviour::with_config(key.public().to_peer_id(), store, cfg);
+            Ok(MutinyBehaviour { request_response, mdns, kad })
         })?
         .with_swarm_config(
             |c| c.with_idle_connection_timeout(Duration::from_secs(60))
