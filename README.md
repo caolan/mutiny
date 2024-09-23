@@ -4,9 +4,8 @@ Peer-to-peer web applications runtime.
 
 ## Structure
 
-* mutiny - CLI interface to mutinyd and application server
+* mutiny - application server and CLI interface to mutinyd
 * mutinyd - long-running process to manage networking, persistence, data sync
-* lib/ - shared code for the above applications
 
 ## Usage
 
