@@ -249,6 +249,30 @@ impl Server {
                     println!("Connection closed: {address}");
                 }
             },
+            SwarmEvent::Dialing {..} => {
+                println!("Dialing...");
+            },
+            SwarmEvent::OutgoingConnectionError { error, .. } => {
+                println!("Outgoing connection error: {error}");
+            },
+            SwarmEvent::Behaviour(swarm::MutinyBehaviourEvent::Identify(ev)) => match ev {
+                // Identification information of the local node has been sent to a peer in response to an identification request.
+                libp2p::identify::Event::Sent { peer_id, .. } => {
+                    println!("Sent identify info to {peer_id:?}")
+                },
+                // Identification information has been received from a peer.
+                libp2p::identify::Event::Received { info, .. } => {
+                    println!("Received identify info {info:?}")
+                },
+                // Identification information of the local node has been actively pushed to a peer.
+                libp2p::identify::Event::Pushed { peer_id, .. } => {
+                    println!("Pushed identify info to {peer_id:?}")
+                },
+                // Error while attempting to identify the remote.
+                libp2p::identify::Event::Error { peer_id, .. } => {
+                    println!("Error identifying remote {peer_id:?}")
+                },
+            },
             _ => {}
         };
         Ok(())
@@ -361,6 +385,16 @@ impl Server {
                     peers.push(id.to_base58());
                 }
                 let _ = request.response.send(ResponseBody::Peers {peers}).await;
+            },
+            RequestBody::DialAddress {address} => {
+                let remote = address.parse::<Multiaddr>()?;
+                self.swarm.dial(remote)?;
+                // TODO: use connection id to track success or not of
+                // Indentify by checking for outgoing connection error,
+                // connection established, and identify sent/received events.
+                // TODO: use identify::Behaviour::push() to actively push
+                // identity info to peer after this dial request.
+                let _ = request.response.send(ResponseBody::Success).await;
             },
             RequestBody::AppAnnouncements => {
                 let tx = self.store.transaction()?;

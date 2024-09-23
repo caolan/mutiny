@@ -67,6 +67,7 @@ export type MutinyRequest = {
 };
 export type MutinyRequestBody = {type: "LocalPeerId"}
     | {type: "Peers"}
+    | {type: "DialAddress", address: string}
     | {type: "AppAnnouncements"}
     | {type: "GetLastPort", app_uuid: string}
     | {type: "SetLastPort", app_uuid: string, port: number}
@@ -288,6 +289,14 @@ export class MutinyClient {
         const response = await this.requestOne({type: "Peers"});
         assert(response.type === 'Peers');
         return response.peers;
+    }
+
+    async dialAddress(address: string): Promise<void> {
+        const response = await this.requestOne({
+            type: "DialAddress",
+            address,
+        });
+        assert(response.type === 'Success');
     }
 
     private _subscribe<R>(request: MutinyRequest): AsyncIterableIterator<R> {

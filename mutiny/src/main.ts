@@ -2,6 +2,7 @@ import { help, listCommands } from "./commands/help.ts";
 import { parseArgs } from "@std/cli/parse-args";
 import serve from "./commands/serve.ts";
 import info from "./commands/info.ts";
+import dial from "./commands/dial.ts";
 
 if (import.meta.main) {
     const args = parseArgs(Deno.args);
@@ -17,6 +18,10 @@ if (import.meta.main) {
         }
         case "info": {
             info(args);
+            break;
+        }
+        case "dial": {
+            dial(args);
             break;
         }
         default: {

@@ -24,6 +24,9 @@ pub enum RequestBody {
     },
     LocalPeerId,
     Peers,
+    DialAddress {
+        address: String,
+    },
     Announce {
         peer: String,
         app_uuid: String,
