@@ -25,12 +25,13 @@ Deno.test("Connect CLI to mutinyd and check it prints local peer ID", async () =
     await waitForSocket(socket_path);
 
     const {code, stdout } = await new Deno.Command("bash", {
-        args: ["./mutiny/mutiny", socket_path],
+        args: ["./mutiny/mutiny", "info", "--socket", socket_path],
         cwd: join(import.meta.dirname as string, ".."), 
     }).output();
 
     // Check mutiny CLI connected and reported local peer ID
     const txt = new TextDecoder().decode(stdout);
+    console.log(txt);
     assert(txt.includes("12D3KooWGTq2hgqpzUpk8Z1TGENuxkxCsZjxBtD7e8kWAUawcygo"));
 
     mutinyd.kill("SIGINT");

@@ -55,10 +55,10 @@ We'll add a basic layout to `index.html`:
 
 ## Serving the app
 
-You can serve this application using `mutiny-app`:
+You can serve this application using `mutiny`:
 
 ```
-./mutiny-app/mutiny-app mylabel ./peers-app
+./mutiny/mutiny serve mylabel ./peers-app
 ```
 
 This tells `mutinyd` to register a new application with label `mylabel` and

@@ -6,10 +6,11 @@ appropriate.
 
 ## Application metadata
 
-An application is referenced canonically by it's UUID, but also locally
-using a human-friendly label. If you serve the chat app using `mutiny-app chat
-examples/chat`, you are serving the `examples/chat` directory with the
-app label `chat`. You'll see the app's UUID printed after starting it.
+An application is referenced canonically by it's UUID, but also
+locally using a human-friendly label. If you serve the chat app using
+`mutiny serve chat examples/chat`, you are serving the `examples/chat`
+directory with the app label `chat`. You'll see the app's UUID printed
+after starting it.
 
 Use the following API to request the current app's label and UUID in
 the browser:

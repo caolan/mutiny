@@ -1,7 +1,7 @@
 import { join } from "@std/path/join";
 import { assertEquals } from "@std/assert";
-import { MutinyClient } from "../../lib/client.ts";
-import { Server }from "../src/main.ts";
+import { MutinyClient } from "../src/client.ts";
+import { Server }from "../src/server.ts";
 
 const BASE_URL = "http://localhost:8000";
 const ROOT = join(import.meta.dirname as string, "www");

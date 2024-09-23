@@ -1,40 +1,6 @@
-import { defaultSocketPath, MutinyClient } from "../../lib/client.ts";
-import { parseArgs } from "@std/cli/parse-args";
+import { MutinyClient } from "./client.ts";
 import { serveDir } from "@std/http";
-
-function eventStream<T>(iter: AsyncIterableIterator<T>, map: (event: T) => [string, string]) {
-    let stop = false;
-    const body = new ReadableStream({
-        start(controller) {
-            (async () => {
-                const encoder = new TextEncoder();
-                try {
-                    for await (const event of iter) {
-                        if (stop) break;
-                        const [name, data] = map(event);
-                        controller.enqueue(
-                            encoder.encode(
-                                `event: ${name}\r\ndata: ${data}\r\n\r\n`
-                            )
-                        );
-                    }
-                } catch (err) {
-                    // Report error and just end the stream instead of
-                    // stopping the whole server process.
-                    console.error(`Event stream error: ${err.message}`);
-                }
-            })();
-        },
-        cancel() {
-            stop = true;
-        }
-    });
-    return new Response(body, {
-        headers: {
-            'Content-Type': 'text/event-stream',
-        }
-    });
-}
+import eventStream from "./eventstream.ts";
 
 export class Server {
     constructor (
@@ -161,27 +127,4 @@ export class Server {
             }
         }
     }
-}
-
-if (import.meta.main) {
-    if (Deno.args.length < 2) {
-        console.error("Usage: mutiny-app [OPTIONS] LABEL PATH");
-        console.error("");
-        console.error("Options:");
-        console.error("  -s, --socket <SOCKET>  Unix socket to bind to");
-        Deno.exit(1);
-    }
-    const args = parseArgs(Deno.args);
-    const socket_path = args.s || args.socket || defaultSocketPath(); 
-    const label = "" + args._[0];
-    const root = "" + args._[1];
-
-    const client = new MutinyClient({socket_path});
-    const uuid = (
-        await client.appInstanceUuid(label) ?? 
-        await client.createAppInstance(label)
-    );
-
-    const server = new Server(client, {label, uuid}, root);
-    await server.serve();
 }
