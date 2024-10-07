@@ -3,6 +3,7 @@ export function listCommands() {
     console.error("  serve    Serve an application");
     console.error("  info     Show info about mutinyd");
     console.error("  dial     Connects to a known multi-address");
+    console.error("  peers    List known peer IDs");
 }
 
 export function help(command?: string) {
@@ -32,6 +33,14 @@ export function help(command?: string) {
             console.error("");
             console.error("Arguments:");
             console.error("  ADDRESS  libp2p multi-address to connect to");
+            console.error("");
+            console.error("Options:");
+            console.error("  -s, --socket <SOCKET>  Unix socket to bind to");
+            console.error("  --help                 Show this message");
+            break;
+        }
+        case "peers": {
+            console.error("Usage: mutiny peers [OPTIONS]");
             console.error("");
             console.error("Options:");
             console.error("  -s, --socket <SOCKET>  Unix socket to bind to");

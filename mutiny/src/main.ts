@@ -3,6 +3,7 @@ import { parseArgs } from "@std/cli/parse-args";
 import serve from "./commands/serve.ts";
 import info from "./commands/info.ts";
 import dial from "./commands/dial.ts";
+import peers from "./commands/peers.ts";
 
 if (import.meta.main) {
     const args = parseArgs(Deno.args);
@@ -22,6 +23,10 @@ if (import.meta.main) {
         }
         case "dial": {
             dial(args);
+            break;
+        }
+        case "peers": {
+            peers(args);
             break;
         }
         default: {
