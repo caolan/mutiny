@@ -27,18 +27,20 @@ async function fetchPeers() {
    return new Set(await res.json());
 }
 
-/** @param {Set<string>} peers */
-async function announce(peers) {
-   const data = {
-       id: 'mutiny.example.chat',
-       nick: state.nick.value,
-   };
-   for (const peer of peers) {
-       await fetch("/_api/v1/announcements/outbox", {
-           method: 'POST',
-           body: JSON.stringify({peer, data}),
-       });
-   }
+const announced = new Set();
+async function announce() {
+    const data = {
+        id: 'mutiny.example.chat',
+        nick: state.nick.value,
+    };
+    for (const peer of state.peers.value.difference(announced)) {
+        console.log('announcing to', peer);
+        await fetch("/_api/v1/announcements/outbox", {
+            method: 'POST',
+            body: JSON.stringify({peer, data}),
+        });
+        announced.add(peer);
+    }
 }
 
 async function fetchAnnouncements() {
@@ -91,25 +93,28 @@ state.announcements.value = await fetchAnnouncements();
 state.peers.value = await fetchPeers();
 await fetchMessages();
 
-// Announce app to newly discovered peers
-announce(state.peers.value);
-
-// Announce to all peers when nick changes
-watch([state.nick], () => announce(state.peers.value));
+// Announce app when new peers discovered or nick changes
+watch([state.peers], announce);
+watch([state.nick], () => {
+    // Re-announce to all peers on nick change
+    announced.clear();
+    announce();
+});
+announce();
 
 // Ask user for nickname
 askNick();
 
 // Subscribe to server-sent events
 const peer_events = new EventSource("/_api/v1/peers/events");
-peer_events.addEventListener("PeerDiscovered", peer_id => {
-    console.log('Peer discovered', peer_id);
-    state.peers.value.add(peer_id);
+peer_events.addEventListener("PeerDiscovered", event => {
+    console.log('Peer discovered', event.data);
+    state.peers.value.add(event.data);
     state.peers.signal();
 });
-peer_events.addEventListener("PeerExpired", peer_id => {
-    console.log('Peer expired', peer_id);
-    state.peers.value.delete(peer_id);
+peer_events.addEventListener("PeerExpired", event => {
+    console.log('Peer expired', event.data);
+    state.peers.value.delete(event.data);
     state.peers.signal();
 });
 
