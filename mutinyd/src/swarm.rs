@@ -66,4 +66,3 @@ pub async fn start(keypair: Keypair) -> Result<
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
     Ok(swarm)
 }
-

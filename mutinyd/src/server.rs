@@ -20,7 +20,7 @@ pub struct Server {
     inbox_subscribers: HashMap<i64, HashMap<usize, mpsc::Sender<ResponseBody>>>,
     client_request_receiver: mpsc::Receiver<ClientRequest>,
     client_request_sender: mpsc::Sender<ClientRequest>,
-    peers: HashSet<(PeerId, Multiaddr)>,
+    peers: HashMap<PeerId, HashSet<Multiaddr>>,
     peer_id: libp2p::PeerId,
     delivery_attempts: HashMap<OutboundRequestId, i64>,
     store: Store,
@@ -38,7 +38,7 @@ impl Server {
             swarm: swarm::start(config.keypair).await?,
             client_request_receiver: rx,
             client_request_sender: tx,
-            peers: HashSet::new(),
+            peers: HashMap::new(),
             peer_id: libp2p::identity::PeerId::from_public_key(pubkey),
             delivery_attempts: HashMap::new(),
             store: Store::new(config.db_connection),
@@ -199,25 +199,49 @@ impl Server {
         }
     }
 
+    async fn add_peer_address(&mut self, peer_id: PeerId, addr: Multiaddr) {
+        match self.peers.entry(peer_id) {
+            std::collections::hash_map::Entry::Occupied(entry) => {
+                entry.into_mut().insert(addr);
+            },
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                let mut addrs = HashSet::new();
+                addrs.insert(addr);
+                entry.insert(addrs);
+                self.peer_subscribers_send(ResponseBody::PeerDiscovered {
+                    peer_id: peer_id.to_base58(),
+                }).await;
+            },
+        }
+    }
+
+    async fn remove_peer_address(&mut self, peer_id: PeerId, addr: Multiaddr) {
+        let mut expired = false;
+        if let Some(addrs) = self.peers.get_mut(&peer_id) {
+            addrs.remove(&addr);
+            expired = addrs.len() == 0;
+        }
+        if expired {
+            self.peers.remove(&peer_id);
+            self.peer_subscribers_send(ResponseBody::PeerExpired {
+                peer_id: peer_id.to_base58(),
+            }).await;
+        }
+    }
+
     async fn swarm_event(&mut self, event: SwarmEvent<MutinyBehaviourEvent>) -> Result<(), Box<dyn Error>> {
         match event {
             SwarmEvent::Behaviour(swarm::MutinyBehaviourEvent::Mdns(ev)) => match ev {
                 mdns::Event::Discovered(list) => {
-                    for (peer_id, multiaddr) in list {
+                    for (peer_id, addr) in list {
                         println!("mDNS discovered a new peer: {peer_id}");
-                        self.peers.insert((peer_id, multiaddr));
-                        self.peer_subscribers_send(ResponseBody::PeerDiscovered {
-                            peer_id: peer_id.to_base58(),
-                        }).await;
+                        self.add_peer_address(peer_id, addr).await
                     }
                 },
                 mdns::Event::Expired(list) => {
-                    for (peer_id, multiaddr) in list {
+                    for (peer_id, addr) in list {
                         println!("mDNS discover peer has expired: {peer_id}");
-                        self.peers.remove(&(peer_id, multiaddr));
-                        self.peer_subscribers_send(ResponseBody::PeerExpired {
-                            peer_id: peer_id.to_base58(),
-                        }).await;
+                        self.remove_peer_address(peer_id, addr).await;
                     }
                 },
             },
@@ -262,7 +286,11 @@ impl Server {
                 },
                 // Identification information has been received from a peer.
                 libp2p::identify::Event::Received { info, .. } => {
-                    println!("Received identify info {info:?}")
+                    println!("Received identify info {info:?}");
+                    let peer_id = libp2p::identity::PeerId::from_public_key(&info.public_key);
+                    for addr in info.listen_addrs {
+                        self.add_peer_address(peer_id, addr).await
+                    }
                 },
                 // Identification information of the local node has been actively pushed to a peer.
                 libp2p::identify::Event::Pushed { peer_id, .. } => {
@@ -381,7 +409,7 @@ impl Server {
             },
             RequestBody::Peers => {
                 let mut peers: Vec<String> = Vec::new();
-                for (id, _addr) in self.peers.iter() {
+                for (id, _addrs) in self.peers.iter() {
                     peers.push(id.to_base58());
                 }
                 let _ = request.response.send(ResponseBody::Peers {peers}).await;
