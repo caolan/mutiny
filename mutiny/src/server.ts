@@ -31,6 +31,10 @@ export class Server {
                 return eventStream(this.client.peerEvents(), event => {
                     return [event.type, event.peer_id];
                 });
+            } else if (request.method === 'POST' && pathname === '/_api/v1/dial') {
+                const body = await request.json();
+                await this.client.dialAddress(body.address);
+                return new Response(JSON.stringify({success: true}));
             } else if (request.method === 'POST' && pathname === '/_api/v1/announcements/outbox') {
                 const body = await request.json();
                 await this.client.announce(

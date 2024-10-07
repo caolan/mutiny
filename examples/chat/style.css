@@ -41,13 +41,13 @@ chat-peers {
     min-width: 200px;
 }
 
-#peers ul {
+chat-peers ul {
     list-style: none;
     margin: 0;
     padding: 0;
 }
 
-#peers li {
+chat-peers li {
     overflow: hidden;
     text-overflow: ellipsis;
     margin: 0;
@@ -56,7 +56,7 @@ chat-peers {
     white-space: nowrap;
 }
 
-#peers .active {
+chat-peers .active {
     background: #ccf;
 }
 
@@ -94,7 +94,7 @@ chat-message-history {
     flex-shrink: 0;
 }
 
-#peers li::before {
+chat-peers li::before {
     content: '👤 ';
 }
 

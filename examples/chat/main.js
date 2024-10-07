@@ -1,7 +1,7 @@
 // @ts-check
 import * as state from "./state.js";
 import {watch} from "./lib/signaller.js";
-import {askNick} from "../nick.js";
+import {askNick} from "./nick.js";
 
 // Custom elements
 import "./components/header.js";
