@@ -7,15 +7,12 @@ export default class ChatMessageHistory extends HTMLElement {
     }
 
     connectedCallback() {
-        this.shadow = this.attachShadow({mode: "open"});
-        this.shadow.innerHTML = `
-            <link rel="stylesheet" href="style.css">
-            <pre id="message-history"></pre>
-        `;
-        this.history = this.shadow.getElementById('message-history');
-        this.stop = watch([local_peer_id, selected_announcement, messages], () => {
-            this.updateMessages();
-        });
+        this.stop = watch([
+            local_peer_id, 
+            selected_announcement, 
+            announcements,
+            messages,
+        ], () => this.updateMessages());
         this.updateMessages();
     }
 
@@ -52,7 +49,7 @@ export default class ChatMessageHistory extends HTMLElement {
                 }
             }
         }
-        this.history.textContent = txt;
+        this.textContent = txt;
     }
 }
 
